@@ -1,220 +1,117 @@
-import pandas as pd
-import numpy as np
-import re
 import os
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+from dotenv import load_dotenv
+import json
+import pickle
+from langchain_openai import OpenAIEmbeddings
+from langchain.vectorstores import FAISS
+from langchain.schema import Document
 
-# Try to import sentence_transformers and faiss
-# Fall back to simpler implementation if not available
-try:
-    from sentence_transformers import SentenceTransformer
-    import faiss
-    EMBEDDINGS_AVAILABLE = True
-except ImportError:
-    print("Warning: sentence-transformers or faiss not available. Using fallback similarity.")
-    EMBEDDINGS_AVAILABLE = False
+# Load environment variables
+load_dotenv()
 
 class SchemaEmbeddingStore:
-    def __init__(self, ddl_file_path, embedding_file="data/schema_embeddings.csv"):
-        self.ddl_file_path = ddl_file_path
-        self.embedding_file = embedding_file
-        self.statements = []
-        self.embeddings = None
-        self.index = None
-        
-        # Initialize embedding model if available
-        if EMBEDDINGS_AVAILABLE:
-            self.model = SentenceTransformer('all-MiniLM-L6-v2')
-        
-        # Check if embeddings already exist
-        if os.path.exists(embedding_file) and EMBEDDINGS_AVAILABLE:
+    """Store and retrieve embeddings for database schema elements."""
+    
+    def __init__(self, cache_path: str = "data/schema_embeddings.pkl"):
+        """Initialize the embedding store."""
+        self.cache_path = cache_path
+        self.embeddings_model = OpenAIEmbeddings(
+            model="text-embedding-3-small",
+            openai_api_key=os.getenv("OPENAI_API_KEY")
+        )
+        self.vector_store = None
+        self._load_or_create_store()
+    
+    def _load_or_create_store(self):
+        """Load existing vector store or create a new one."""
+        if os.path.exists(self.cache_path):
             try:
-                self.load_embeddings()
-                print(f"Loaded existing embeddings from {embedding_file}")
+                with open(self.cache_path, "rb") as f:
+                    self.vector_store = pickle.load(f)
+                print(f"Loaded schema embeddings from {self.cache_path}")
             except Exception as e:
-                print(f"Error loading embeddings: {str(e)}")
-                self.create_embeddings()
-                self.save_embeddings()
+                print(f"Error loading embeddings: {e}")
+                self._create_new_store()
         else:
-            print(f"Creating new schema information from {ddl_file_path}")
-            self.parse_ddl_statements()
+            self._create_new_store()
+    
+    def _create_new_store(self):
+        """Create a new vector store."""
+        self.vector_store = FAISS.from_documents(
+            documents=[Document(page_content="schema_placeholder")],
+            embedding=self.embeddings_model
+        )
+        print("Created new schema embedding store")
+    
+    def add_schema_elements(self, elements: List[Dict[str, Any]]):
+        """Add schema elements to the vector store."""
+        documents = []
+        for element in elements:
+            # Create a document for each schema element
+            content = f"{element['type']}: {element['name']}"
+            if element.get('description'):
+                content += f"\nDescription: {element['description']}"
+            if element.get('columns'):
+                columns_str = ", ".join([f"{col['name']} ({col['type']})" for col in element['columns']])
+                content += f"\nColumns: {columns_str}"
             
-            if EMBEDDINGS_AVAILABLE:
-                self.create_embeddings()
-                self.save_embeddings()
-                # Build the FAISS index
-                self.build_index()
-    
-    def parse_ddl_statements(self):
-        """Parse DDL file into individual statements."""
-        if not os.path.exists(self.ddl_file_path):
-            print(f"Warning: DDL file {self.ddl_file_path} not found.")
-            return
-            
-        with open(self.ddl_file_path, 'r') as f:
-            ddl_content = f.read()
+            doc = Document(
+                page_content=content,
+                metadata=element
+            )
+            documents.append(doc)
         
-        # Split by statement terminators
-        raw_statements = re.split(r';(?=\s*(?:CREATE|ALTER|DROP|INSERT))', ddl_content)
+        # Create a new vector store with the documents
+        self.vector_store = FAISS.from_documents(
+            documents=documents,
+            embedding=self.embeddings_model
+        )
         
-        # Clean and categorize statements
-        for stmt in raw_statements:
-            stmt = stmt.strip()
-            if not stmt:
-                continue
-                
-            # Add metadata to each statement
-            statement_info = {
-                "text": stmt,
-                "type": self._get_statement_type(stmt),
-                "table": self._extract_table_name(stmt),
-                "columns": self._extract_columns(stmt)
-            }
-            
-            self.statements.append(statement_info)
+        # Save the vector store
+        self._save_store()
     
-    def _get_statement_type(self, stmt):
-        """Determine the type of SQL statement."""
-        if re.match(r'CREATE\s+TABLE', stmt, re.IGNORECASE):
-            return "CREATE_TABLE"
-        elif re.match(r'ALTER\s+TABLE', stmt, re.IGNORECASE):
-            return "ALTER_TABLE"
-        elif re.match(r'CREATE\s+INDEX', stmt, re.IGNORECASE):
-            return "CREATE_INDEX"
-        else:
-            return "OTHER"
+    def _save_store(self):
+        """Save the vector store to disk."""
+        os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
+        with open(self.cache_path, "wb") as f:
+            pickle.dump(self.vector_store, f)
+        print(f"Saved schema embeddings to {self.cache_path}")
     
-    def _extract_table_name(self, stmt):
-        """Extract table name from statement."""
-        match = re.search(r'(?:TABLE|INDEX)\s+\[?(\w+)\]?', stmt, re.IGNORECASE)
-        return match.group(1) if match else ""
-    
-    def _extract_columns(self, stmt):
-        """Extract column names from statement."""
-        if "CREATE TABLE" in stmt.upper():
-            # Extract column definitions
-            match = re.search(r'CREATE\s+TABLE\s+\[?\w+\]?\s*\(([\s\S]*?)\)', stmt, re.IGNORECASE)
-            if match:
-                column_text = match.group(1)
-                columns = []
-                for col_match in re.finditer(r'\[?(\w+)\]?\s+(\w+)', column_text):
-                    columns.append(col_match.group(1))
-                return columns
-        return []
-    
-    def create_embeddings(self):
-        """Create embeddings for all statements."""
-        if not EMBEDDINGS_AVAILABLE:
-            print("Warning: Embeddings not available. Skipping embedding creation.")
-            return
-            
-        # Create text representations for embedding
-        texts = []
-        for stmt in self.statements:
-            # Create a rich text representation that includes metadata
-            text = f"{stmt['type']} {stmt['table']} "
-            if stmt['columns']:
-                text += f"COLUMNS: {', '.join(stmt['columns'])} "
-            text += stmt['text'][:500]  # Limit length for embedding
-            texts.append(text)
+    def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
+        """Search for schema elements relevant to the query."""
+        if not self.vector_store:
+            return []
         
-        # Generate embeddings
-        self.embeddings = self.model.encode(texts)
-    
-    def save_embeddings(self):
-        """Save embeddings and statements to CSV."""
-        if not EMBEDDINGS_AVAILABLE:
-            return
-            
-        # Create directory if it doesn't exist
-        os.makedirs(os.path.dirname(self.embedding_file), exist_ok=True)
+        results = self.vector_store.similarity_search_with_score(query, k=k)
         
-        df = pd.DataFrame({
-            'statement_type': [s['type'] for s in self.statements],
-            'table': [s['table'] for s in self.statements],
-            'columns': [','.join(s['columns']) for s in self.statements],
-            'text': [s['text'] for s in self.statements]
-        })
-        
-        # Save embeddings as separate columns
-        for i in range(self.embeddings.shape[1]):
-            df[f'emb_{i}'] = self.embeddings[:, i]
-        
-        df.to_csv(self.embedding_file, index=False)
-    
-    def load_embeddings(self):
-        """Load embeddings from CSV."""
-        if not EMBEDDINGS_AVAILABLE:
-            return
-            
-        df = pd.read_csv(self.embedding_file)
-        
-        # Reconstruct statements
-        self.statements = []
-        for _, row in df.iterrows():
-            self.statements.append({
-                'type': row['statement_type'],
-                'table': row['table'],
-                'columns': row['columns'].split(',') if pd.notna(row['columns']) and row['columns'] else [],
-                'text': row['text']
+        # Format the results
+        formatted_results = []
+        for doc, score in results:
+            formatted_results.append({
+                "content": doc.page_content,
+                "metadata": doc.metadata,
+                "score": float(score)
             })
         
-        # Extract embeddings
-        emb_cols = [col for col in df.columns if col.startswith('emb_')]
-        self.embeddings = df[emb_cols].values
+        return formatted_results
     
-    def build_index(self):
-        """Build FAISS index for fast similarity search."""
-        if not EMBEDDINGS_AVAILABLE or self.embeddings is None:
-            return
-            
-        dimension = self.embeddings.shape[1]
-        self.index = faiss.IndexFlatL2(dimension)
-        self.index.add(self.embeddings.astype(np.float32))
-    
-    def search(self, query, top_k=5):
-        """Search for most relevant schema elements."""
-        if not EMBEDDINGS_AVAILABLE or self.index is None:
-            # Fallback to keyword matching
-            return self._keyword_search(query, top_k)
-            
-        # Encode the query
-        query_embedding = self.model.encode([query])
+    def get_relevant_schema_context(self, query: str, k: int = 5) -> str:
+        """Get a formatted string of schema elements relevant to the query."""
+        results = self.search(query, k=k)
         
-        # Search the index
-        distances, indices = self.index.search(query_embedding.astype(np.float32), top_k)
+        if not results:
+            return "No schema information available."
         
-        # Return the relevant statements
-        results = []
-        for idx in indices[0]:
-            results.append(self.statements[idx])
+        context_parts = []
+        for result in results:
+            metadata = result["metadata"]
+            if metadata["type"] == "table":
+                # Format table information
+                columns_str = "\n".join([f"  - {col['name']} ({col['type']})" for col in metadata.get("columns", [])])
+                context_parts.append(f"Table: {metadata['name']}\nColumns:\n{columns_str}\n")
+            else:
+                # Format other schema elements
+                context_parts.append(f"{metadata['type']}: {metadata['name']}\n{result['content']}\n")
         
-        return results
-    
-    def _keyword_search(self, query, top_k=5):
-        """Fallback search using keyword matching."""
-        query_terms = set(re.findall(r'\b\w+\b', query.lower()))
-        
-        # Score each statement based on term overlap
-        scored_statements = []
-        for stmt in self.statements:
-            score = 0
-            
-            # Check table name
-            if stmt['table'].lower() in query_terms:
-                score += 3
-            
-            # Check columns
-            for col in stmt['columns']:
-                if col.lower() in query_terms:
-                    score += 2
-            
-            # Check statement text
-            stmt_terms = set(re.findall(r'\b\w+\b', stmt['text'].lower()))
-            score += len(query_terms.intersection(stmt_terms))
-            
-            scored_statements.append((score, stmt))
-        
-        # Sort by score and return top_k
-        scored_statements.sort(reverse=True, key=lambda x: x[0])
-        return [stmt for score, stmt in scored_statements[:top_k]] 
+        return "\n".join(context_parts) 
