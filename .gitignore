@@ -1,0 +1,55 @@
+# Python virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+# But keep the schema definition
+!data/database_schema.sql
+
+# Environment variables
+.env
+.env.local
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Streamlit specific
+.streamlit/secrets.toml
+.streamlit/config.toml
+
+# Temporary files
+tmp/
+temp/
+
+# Model files and caches
+.cache/
+.langchain.db
+.langchain/
+.chroma/
+
+# Logs
+logs/
+*.log
+
+# Keep these files
+# streamlit_app.py
+# ui_components.py
+# db_setup.py
+# requirements.txt
+# handlers.py
+# graph_builder.py
+# data/database_schema.sql 
