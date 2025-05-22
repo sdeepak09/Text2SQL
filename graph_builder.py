@@ -8,6 +8,9 @@ from llm_utils import (
 from db_setup import get_formatted_schema
 import json
 import logging
+from langchain_openai import OpenAIEmbeddings
+from langchain.vectorstores import FAISS
+from langchain.schema import Document
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -27,6 +30,9 @@ class GraphState(TypedDict):
     error_message: Optional[str]
     _recursion_count: int
     conversation_history: List[Dict[str, Any]]
+
+# Replace any existing embedding model with OpenAI
+embeddings = OpenAIEmbeddings(model="text-embedding-3-small")  # or text-embedding-3-large for better quality
 
 # Define the graph nodes
 def explain_query_node(state: GraphState) -> GraphState:

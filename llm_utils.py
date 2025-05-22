@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.utilities import SQLDatabase
 from langchain.prompts import PromptTemplate
 from pydantic_models import QueryExplanation, SQLOutput, QueryResult
@@ -200,4 +200,21 @@ SQL Query:"""
                 "result": f"Error: {str(e)}"
             }
     
-    return generate_sql, db 
+    return generate_sql, db
+
+def get_embeddings_model():
+    """Returns the OpenAI embeddings model."""
+    return OpenAIEmbeddings(
+        model="text-embedding-3-small",  # or text-embedding-3-large
+        openai_api_key=os.getenv("OPENAI_API_KEY")
+    )
+
+def embed_text(text):
+    """Embeds a single text string using OpenAI."""
+    embeddings_model = get_embeddings_model()
+    return embeddings_model.embed_query(text)
+
+def embed_texts(texts):
+    """Embeds a list of text strings using OpenAI."""
+    embeddings_model = get_embeddings_model()
+    return embeddings_model.embed_documents(texts) 
