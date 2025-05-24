@@ -46,13 +46,13 @@ Analyze the query and provide a structured explanation in JSON format.
 **Important: All table and column names in your explanation (target_tables, target_columns, etc.) MUST originate from the Database Schema Context provided above. Do not invent or assume any tables or columns not present in the context.**
 
 The JSON output should have the following fields:
-- identified_intent: A brief description of what the user is asking for
-- target_tables: An array of table names that are relevant to the query (from the provided context)
-- target_columns: An array of column names that should be included in the result (from the provided context)
-- filter_conditions: Any conditions that should be applied (or null if none)
-- join_conditions: Any joins that need to be performed (or null if none)
-- group_by: Any grouping that should be applied (or null if none)
-- order_by: Any ordering that should be applied (or null if none)
+- identified_intent: A brief description of what the user is asking for.
+- target_tables: An array of table names (strings) relevant to the query (must be from the provided Database Schema Context). Example: ["TableName1", "TableName2"]
+- target_columns: An array of column names (strings) to be included or used (must be from the provided Database Schema Context). Example: ["ColumnName1", "ColumnName2"]
+- filter_conditions: A list of filter condition objects, or null. Each object must have 'column' (string), 'operator' (string, e.g., '=', '>', 'LIKE', 'BETWEEN'), and 'value' (string or appropriate type). Example: [{"column": "Age", "operator": ">", "value": "30"}, {"column": "Status", "operator": "=", "value": "Active"}]
+- join_conditions: A list of join condition objects, or null. Each object must have 'table1', 'column1', 'table2', 'column2'. Example: [{"table1": "Orders", "column1": "CustomerID", "table2": "Customers", "column2": "ID"}]
+- group_by: A list of column names (strings) to group by, or null. Example: ["Category", "SubCategory"]
+- order_by: An object with 'column' (string) and 'direction' (string, e.g., 'ASC', 'DESC'), or null. Example: {"column": "OrderDate", "direction": "DESC"}
 - limit: Any limit on the number of results (or null if none)
 - summary_of_understanding: A concise explanation of how you understand the query based on the provided context.
 
