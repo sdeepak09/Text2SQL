@@ -1,12 +1,14 @@
 import os
 import json # For pretty printing dicts
 from dotenv import load_dotenv
+import shutil # For directory deletion
 
 # Attempt to import from local modules
 try:
     from rag_context import RAGContextProvider
-    from llm_utils import get_llm, get_query_explanation_prompt, get_sql_generation_prompt, parse_query_explanation
-    from pydantic_models import QueryExplanation # Needed for parsed_explanation.dict()
+    # LLM-specific imports are not strictly needed for this FAISS test
+    # from llm_utils import get_llm, get_query_explanation_prompt, get_sql_generation_prompt, parse_query_explanation
+    # from pydantic_models import QueryExplanation 
 except ImportError as e:
     print(f"Error importing local modules: {e}")
     print("Please ensure you are running this script from the root of the repository and PYTHONPATH is set up correctly if needed.")
@@ -16,95 +18,65 @@ def main():
     load_dotenv() # Ensure OPENAI_API_KEY is loaded from .env if present
 
     ddl_file = "data/database_schema.sql"
-    user_query = "How many appointments were scheduled for each day last week?"
+    user_query = "How many appointments were scheduled for each day last week?" # Used for FAISS search test
+    faiss_store_path = "data/schema_embeddings_faiss/" # Default path used by SchemaEmbeddingStore
 
-    # Ensure OPENAI_API_KEY is available
+    # Ensure OPENAI_API_KEY is available for RAGContextProvider initialization
     api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key or "dummy" in api_key.lower() or len(api_key) < 10: # Basic check for placeholder/invalid key
+    if not api_key or "dummy" in api_key.lower() or len(api_key) < 10:
         print(f"CRITICAL ERROR: A valid OPENAI_API_KEY was not found or appears to be a placeholder: {api_key}")
         print("Please ensure it is correctly set as an environment variable or in a .env file.")
-        print("Script cannot proceed without a valid key for live OpenAI API calls.")
+        print("Script cannot proceed without a valid key for RAGContextProvider initialization.")
         exit(1)
     
-    print(f"Using OpenAI API Key: {api_key[:5]}...{api_key[-4:]}") # Print partial key for confirmation
+    print(f"Using OpenAI API Key: {api_key[:5]}...{api_key[-4:]}")
     print(f"Target DDL file: {ddl_file}")
-    print(f"User Query: {user_query}\n")
+    print(f"FAISS Store Path: {faiss_store_path}")
+    print(f"User Query for FAISS test: {user_query}\n")
 
     try:
-        # Initialize Components
-        print("--- Initializing Components ---")
-        rag_provider = RAGContextProvider(ddl_file_path=ddl_file)
-        llm = get_llm() 
-        explanation_prompt_template = get_query_explanation_prompt()
-        sql_generation_prompt_template = get_sql_generation_prompt()
-        print("Components initialized successfully.\n")
+        # Delete Existing Store (for a clean test)
+        if os.path.exists(faiss_store_path):
+            print(f"--- Deleting existing FAISS store at {faiss_store_path} for a clean test ---")
+            shutil.rmtree(faiss_store_path)
+        else:
+            print(f"--- No existing FAISS store found at {faiss_store_path}. Proceeding with creation. ---")
 
-        # Step 1: Get RAG Context
-        print("--- Step 1: Getting RAG Context ---")
-        rag_context_data = rag_provider.get_relevant_context(user_query)
-        relevant_schema_from_parser = rag_context_data.get("relevant_schema", "") # Keyword search
-        relevant_statements_from_faiss = rag_context_data.get("relevant_statements", "") # FAISS search
+        # First RAGContextProvider Instance (Create and Save)
+        print("\n--- Initializing first RAGContextProvider (will create and save FAISS store) ---")
+        rag_provider_first_instance = RAGContextProvider(ddl_file_path=ddl_file)
+        print("First RAGContextProvider initialized. FAISS store should have been populated and saved if DDL parsing yielded elements.")
         
-        print("\n--- Relevant Schema (Keyword Search Result from SchemaParser) ---")
-        print(relevant_schema_from_parser if relevant_schema_from_parser else "None")
-        print("\n--- Relevant Statements (FAISS Search Result from SchemaEmbeddingStore) ---")
-        print(relevant_statements_from_faiss if relevant_statements_from_faiss else "None")
-        print("\n--- End of RAG Context ---")
+        # Second RAGContextProvider Instance (Load)
+        print("\n--- Initializing second RAGContextProvider (should LOAD the saved FAISS store) ---")
+        rag_provider_second_instance = RAGContextProvider(ddl_file_path=ddl_file) 
+        print("Second RAGContextProvider initialized.")
 
-        # Step 2: Generate Query Explanation
-        print("\n--- Step 2: Generating Query Explanation ---")
-        explanation_prompt_filled = explanation_prompt_template.format(
-            query=user_query,
-            relevant_schema=relevant_schema_from_parser,
-            relevant_statements=relevant_statements_from_faiss
-        )
-        print("\n--- Explanation Prompt Sent to LLM ---")
-        print(explanation_prompt_filled)
+        # Test FAISS Search with Second Instance
+        print("\n--- Testing FAISS search with the second (loaded) RAGContextProvider instance ---")
+        # user_query is already defined
+        rag_context_data_loaded = rag_provider_second_instance.get_relevant_context(user_query)
         
-        explanation_response = llm.invoke(explanation_prompt_filled)
-        explanation_content = explanation_response.content
+        # The task description asked for "relevant_statements". In the current RAGContextProvider,
+        # this corresponds to "formatted_relevant_statements".
+        relevant_statements_from_loaded_faiss = rag_context_data_loaded.get("formatted_relevant_statements", "") # Per task description
+        # For more detailed verification, we can also look at raw_relevant_statements
+        # raw_statements_from_loaded_faiss = rag_context_data_loaded.get("raw_relevant_statements", [])
+
+        print("\n--- Relevant Statements (Formatted, from FAISS Search on loaded store) ---")
+        if relevant_statements_from_loaded_faiss and relevant_statements_from_loaded_faiss.strip() and relevant_statements_from_loaded_faiss != "None":
+            print(relevant_statements_from_loaded_faiss)
+        else:
+            print("No formatted relevant statements found from FAISS search on the loaded store, or result was 'None' or empty.")
+
+        print("\n--- FAISS Save/Load test portion completed ---")
+
+        # LLM-dependent parts are now commented out for this specific FAISS test.
+        # Original Step 2 (Generate Query Explanation) and Step 3 (Generate SQL Query) are skipped.
         
-        print("\n--- Explanation Response from LLM (Raw) ---")
-        print(explanation_content)
-        
-        parsed_explanation, error = parse_query_explanation(explanation_content)
-        if error:
-            print(f"Error parsing explanation: {error}")
-            # Allow script to continue to SQL generation if explanation_content is available
-            # as the LLM might sometimes return valid SQL explanation without perfect JSON.
-            explanation_for_sql_prompt = explanation_content 
-        elif parsed_explanation:
-            print("\n--- Parsed Explanation (JSON) ---")
-            # Ensure parsed_explanation is a Pydantic model with .dict() or handle appropriately
-            if hasattr(parsed_explanation, 'dict'):
-                explanation_for_sql_prompt = json.dumps(parsed_explanation.dict(), indent=2)
-                print(explanation_for_sql_prompt)
-            else: # Fallback if it's not a Pydantic model but some other structure
-                explanation_for_sql_prompt = str(parsed_explanation)
-                print(explanation_for_sql_prompt)
-        else: # Should not happen if no error and no parsed_explanation
-            print("Unknown state: No error but no parsed explanation. Using raw content for next step.")
-            explanation_for_sql_prompt = explanation_content
-
-
-        # Step 3: Generate SQL Query
-        print("\n--- Step 3: Generating SQL Query ---")
-        sql_generation_prompt_filled = sql_generation_prompt_template.format(
-            query=user_query,
-            relevant_schema=relevant_schema_from_parser,
-            relevant_statements=relevant_statements_from_faiss,
-            explanation=explanation_for_sql_prompt 
-        )
-        print("\n--- SQL Generation Prompt Sent to LLM ---")
-        print(sql_generation_prompt_filled)
-
-        sql_response = llm.invoke(sql_generation_prompt_filled)
-        generated_sql = sql_response.content.strip()
-
-        print("\n--- Generated SQL Query ---")
-        print(generated_sql)
-        print("\n--- End of Test ---")
-
+    except FileNotFoundError as e: 
+        print(f"ERROR: DDL file not found at {ddl_file}. Cannot proceed with RAGContextProvider initialization.")
+        print(f"Please ensure the DDL file '{ddl_file}' exists.")
     except Exception as e:
         print(f"An error occurred during the test execution: {e}")
         import traceback
@@ -112,4 +84,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-```
