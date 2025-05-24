@@ -144,4 +144,38 @@ class SchemaParser:
         return {
             "tables": relevant_tables,
             "relationships": relevant_relationships
-        } 
+        }
+    
+    def get_elements_for_embedding(self) -> List[Dict[str, Any]]:
+        """Extract schema elements for embedding."""
+        elements = []
+        
+        # Process tables and columns
+        for table_name, columns_list in self.tables.items():
+            # Table element
+            elements.append({
+                "type": "table",
+                "name": table_name,
+                "content": f"Table: {table_name} with columns: {', '.join([col['name'] for col in columns_list])}",
+                "metadata": {"table_name": table_name, "columns": columns_list}
+            })
+            
+            # Column elements
+            for column_dict in columns_list:
+                elements.append({
+                    "type": "column",
+                    "name": column_dict['name'],
+                    "content": f"Column: {column_dict['name']} ({column_dict['type']}) in table {table_name}",
+                    "metadata": {"table_name": table_name, "column_name": column_dict['name'], "column_type": column_dict['type']}
+                })
+        
+        # Process relationships
+        for rel_dict in self.relationships:
+            elements.append({
+                "type": "relationship",
+                "name": f"{rel_dict['source_table']}.{rel_dict['source_column']}_to_{rel_dict['target_table']}.{rel_dict['target_column']}",
+                "content": f"Relationship: {rel_dict['source_table']}.{rel_dict['source_column']} connects to {rel_dict['target_table']}.{rel_dict['target_column']}",
+                "metadata": rel_dict
+            })
+            
+        return elements
