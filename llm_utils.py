@@ -66,7 +66,7 @@ Return your response in this JSON format:
 def get_sql_generation_prompt():
     """Get the prompt template for generating a SQL query."""
     template = """
-You are an expert SQL developer. Your task is to generate a T-SQL query for Microsoft SQL Server based on a natural language query and its structured explanation, using **only the tables and columns described in the provided schema context and query explanation.**
+You are an expert SQL developer. Your task is to generate a T-SQL query for Microsoft SQL Server based on a natural language query and its structured explanation. You must use **only the tables and columns described in the provided Database Schema Context and reflected in the Query Explanation.**
 
 **Database Schema Context:**
 {relevant_schema}
@@ -80,7 +80,10 @@ Original Query: {query}
 {explanation}
 
 Generate a valid T-SQL query that answers the original query.
-**Important: The SQL query MUST strictly use table and column names found in the Query Explanation and/or the Database Schema Context. Do not use any other table or column names.**
+**Important Rules:**
+1. The SQL query MUST strictly use table and column names found in the Query Explanation AND that are valid as per the Database Schema Context.
+2. If a column is listed in the Query Explanation (e.g., `target_columns`), ensure it is queried from the correct table it belongs to. The Database Schema Context (especially the 'Relevant Schema Statements' section, which may contain descriptions like 'Column X ... part of table Y') provides the ground truth for table-column relationships. If a join is needed to use this column from its correct table and connect to other tables mentioned in the explanation, you must construct that join.
+3. Do not use any other table or column names not justified by both the explanation and the schema context.
 Only return the SQL query without any additional explanation or markdown formatting.
 Ensure the query is compatible with Microsoft SQL Server syntax.
 """
