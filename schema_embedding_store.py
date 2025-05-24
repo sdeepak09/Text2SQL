@@ -97,7 +97,7 @@ class SchemaEmbeddingStore:
 
             doc = Document(
                 page_content=element['content'], # Use the DETAILED descriptive string here
-                metadata=element['metadata']     # Use the 'metadata' field from the element dict
+                metadata=element                 # Store the WHOLE element dict as metadata
             )
             documents.append(doc)
         
