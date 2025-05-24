@@ -6,9 +6,8 @@ import shutil # For directory deletion
 # Attempt to import from local modules
 try:
     from rag_context import RAGContextProvider
-    # LLM-specific imports are not strictly needed for this FAISS test
-    # from llm_utils import get_llm, get_query_explanation_prompt, get_sql_generation_prompt, parse_query_explanation
-    # from pydantic_models import QueryExplanation 
+    from llm_utils import get_llm, get_query_explanation_prompt, get_sql_generation_prompt, parse_query_explanation
+    from pydantic_models import QueryExplanation 
 except ImportError as e:
     print(f"Error importing local modules: {e}")
     print("Please ensure you are running this script from the root of the repository and PYTHONPATH is set up correctly if needed.")
@@ -71,9 +70,77 @@ def main():
 
         print("\n--- FAISS Save/Load test portion completed ---")
 
-        # LLM-dependent parts are now commented out for this specific FAISS test.
-        # Original Step 2 (Generate Query Explanation) and Step 3 (Generate SQL Query) are skipped.
+        # --- LLM-dependent parts are now re-enabled ---
+        print("\n--- Initializing LLM Components ---")
+        llm = get_llm() 
+        explanation_prompt_template = get_query_explanation_prompt()
+        sql_generation_prompt_template = get_sql_generation_prompt()
+        print("LLM Components initialized successfully.\n")
+
+        # RAG context for LLM calls will use the second (loaded) instance's data
+        relevant_schema_from_parser = rag_context_data_loaded.get("relevant_schema", "")
+        formatted_relevant_statements_from_faiss = rag_context_data_loaded.get("formatted_relevant_statements", "")
         
+        print("\n--- Relevant Schema (Keyword Search - for LLM) ---")
+        print(relevant_schema_from_parser if relevant_schema_from_parser else "None")
+        print("\n--- Relevant Statements (FAISS - Formatted - for LLM) ---")
+        print(formatted_relevant_statements_from_faiss if formatted_relevant_statements_from_faiss else "None")
+        print("\n--- End of RAG Context for LLM ---")
+
+        # Step 2: Generate Query Explanation
+        print("\n--- Step 2: Generating Query Explanation ---")
+        explanation_prompt_filled = explanation_prompt_template.format(
+            query=user_query,
+            relevant_schema=relevant_schema_from_parser,
+            relevant_statements=formatted_relevant_statements_from_faiss # Use the formatted string
+        )
+        print("\n--- Explanation Prompt Sent to LLM ---")
+        print(explanation_prompt_filled)
+        
+        explanation_response = llm.invoke(explanation_prompt_filled)
+        explanation_content = explanation_response.content
+        
+        print("\n--- Explanation Response from LLM (Raw) ---")
+        print(explanation_content)
+        
+        parsed_explanation, error = parse_query_explanation(explanation_content)
+        explanation_for_sql_prompt = explanation_content # Fallback to raw content
+        if error:
+            print(f"Error parsing explanation: {error}")
+        elif parsed_explanation:
+            print("\n--- Parsed Explanation (JSON) ---")
+            if hasattr(parsed_explanation, 'dict'):
+                explanation_for_sql_prompt = json.dumps(parsed_explanation.dict(), indent=2)
+                print(explanation_for_sql_prompt)
+            else: 
+                explanation_for_sql_prompt = str(parsed_explanation)
+                print(explanation_for_sql_prompt)
+        else: 
+            print("Unknown state: No error but no parsed explanation. Using raw content for next step.")
+
+
+        # Step 3: Generate SQL Query
+        print("\n--- Step 3: Generating SQL Query ---")
+        if parsed_explanation or explanation_for_sql_prompt: # Proceed if we have some form of explanation
+            sql_generation_prompt_filled = sql_generation_prompt_template.format(
+                query=user_query,
+                relevant_schema=relevant_schema_from_parser,
+                relevant_statements=formatted_relevant_statements_from_faiss, # Use the formatted string
+                explanation=explanation_for_sql_prompt 
+            )
+            print("\n--- SQL Generation Prompt Sent to LLM ---")
+            print(sql_generation_prompt_filled)
+
+            sql_response = llm.invoke(sql_generation_prompt_filled)
+            generated_sql = sql_response.content.strip()
+
+            print("\n--- Generated SQL Query ---")
+            print(generated_sql)
+        else:
+            print("Skipping SQL generation due to parsing error or no explanation.")
+        
+        print("\n--- Full SQL Generation Test Script Completed ---")
+
     except FileNotFoundError as e: 
         print(f"ERROR: DDL file not found at {ddl_file}. Cannot proceed with RAGContextProvider initialization.")
         print(f"Please ensure the DDL file '{ddl_file}' exists.")
