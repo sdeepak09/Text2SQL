@@ -30,7 +30,7 @@ class DummyEmbeddings:
 class SchemaEmbeddingStore:
     """Store and retrieve embeddings for database schema elements."""
     
-    def __init__(self, cache_path: str = "data/schema_embeddings.pkl"):
+    def __init__(self, cache_path: str = "data/schema_embeddings_faiss/"): # Changed default to a directory path
         """Initialize the embedding store."""
         self.cache_path = cache_path
         self.ci_test_mode = os.environ.get("CI_TEST_MODE") == "true"
@@ -54,18 +54,22 @@ class SchemaEmbeddingStore:
             self._create_new_store()
             return
 
-        if os.path.exists(self.cache_path):
+        # Check if the FAISS index directory and a key file exist
+        faiss_index_file = os.path.join(self.cache_path, "index.faiss")
+        if os.path.isdir(self.cache_path) and os.path.exists(faiss_index_file):
             try:
-                with open(self.cache_path, "rb") as f:
-                    self.vector_store = pickle.load(f)
-                if self.vector_store: # Basic check
+                self.vector_store = FAISS.load_local(
+                    folder_path=self.cache_path,
+                    embeddings=self.embeddings_model,
+                    allow_dangerous_deserialization=True 
+                )
+                if self.vector_store: # Basic check after loading
                     print(f"Loaded schema embeddings from {self.cache_path}")
-                else: # Handle empty or corrupted pickle
-                    print(f"Empty or corrupted file at {self.cache_path}. Creating new store.")
+                else: # Should not happen if load_local succeeds without error
+                    print(f"Failed to load a valid vector store from {self.cache_path}. Creating new store.")
                     self._create_new_store()
-
             except Exception as e:
-                print(f"Error loading embeddings: {e}. Creating new store.")
+                print(f"Error loading FAISS embeddings from {self.cache_path}: {e}. Creating new store.")
                 self._create_new_store()
         else:
             self._create_new_store()
@@ -81,9 +85,8 @@ class SchemaEmbeddingStore:
             documents=initial_doc, 
             embedding=self.embeddings_model
         )
-        print("Created new schema embedding store successfully.")
-        if not self.ci_test_mode: # Avoid saving dummy store in CI mode repeatedly if not needed
-            self._save_store()
+        print("Created new schema embedding store with placeholder document (not saved yet).")
+        # self._save_store() # Removed call to save store immediately after creation
 
     def add_schema_elements(self, elements: List[Dict[str, Any]]):
         """Add schema elements to the vector store."""
@@ -123,14 +126,17 @@ class SchemaEmbeddingStore:
             print("CI_TEST_MODE: Skipping save of vector store.")
 
     def _save_store(self):
-        """Save the vector store to disk."""
+        """Save the vector store to disk using FAISS's method."""
         if self.ci_test_mode:
             print("CI_TEST_MODE: Skipping save of vector store.")
             return
-        os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
-        with open(self.cache_path, "wb") as f:
-            pickle.dump(self.vector_store, f)
-        print(f"Saved schema embeddings to {self.cache_path}")
+        
+        if self.vector_store is not None:
+            os.makedirs(self.cache_path, exist_ok=True) # self.cache_path is now a directory
+            self.vector_store.save_local(folder_path=self.cache_path)
+            print(f"Saved schema embeddings to {self.cache_path}")
+        else:
+            print("Warning: Vector store not initialized, nothing to save.")
     
     def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
         """Search for schema elements relevant to the query."""

@@ -9,7 +9,7 @@ class RAGContextProvider:
     def __init__(self, ddl_file_path: str):
         """Initialize with the path to the DDL file."""
         self.schema_parser = SchemaParser(ddl_file_path)
-        self.embedding_store = SchemaEmbeddingStore("data/schema_embeddings.pkl")
+        self.embedding_store = SchemaEmbeddingStore("data/schema_embeddings_faiss/")
         self.full_schema = self.schema_parser.get_formatted_schema()
 
         # Populate FAISS store with schema elements
