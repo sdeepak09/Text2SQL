@@ -205,7 +205,7 @@ SQL Query:"""
 def get_embeddings_model():
     """Returns the OpenAI embeddings model."""
     return OpenAIEmbeddings(
-        model="text-embedding-3-small",  # or text-embedding-3-large
+        model="text-embedding-ada-002",  # or text-embedding-3-large
         openai_api_key=os.getenv("OPENAI_API_KEY")
     )
 

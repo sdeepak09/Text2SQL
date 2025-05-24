@@ -40,7 +40,7 @@ class SchemaEmbeddingStore:
             self.embeddings_model = DummyEmbeddings()
         else:
             self.embeddings_model = OpenAIEmbeddings(
-                model="text-embedding-3-small",
+                model="text-embedding-ada-002",
                 openai_api_key=os.getenv("OPENAI_API_KEY")
             )
         
