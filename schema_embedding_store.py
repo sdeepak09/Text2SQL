@@ -60,8 +60,7 @@ class SchemaEmbeddingStore:
             try:
                 self.vector_store = FAISS.load_local(
                     folder_path=self.cache_path,
-                    embeddings=self.embeddings_model,
-                    allow_dangerous_deserialization=True 
+                    embeddings=self.embeddings_model
                 )
                 if self.vector_store: # Basic check after loading
                     print(f"Loaded schema embeddings from {self.cache_path}")
