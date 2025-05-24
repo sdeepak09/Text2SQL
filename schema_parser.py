@@ -21,44 +21,101 @@ class SchemaParser:
             ddl_content = f.read()
         
         # Extract CREATE TABLE statements
-        table_pattern = r'CREATE TABLE\s+\[?(\w+)\]?\s*\(([\s\S]*?)\);'
+        # Updated table_pattern to handle optional schema like [dbo]. or dbo.
+        table_pattern = r'CREATE TABLE\s+((?:\[?dbo\]?\.)?\[?\w+\]?)\s*\(([\s\S]*?)\);'
         table_matches = re.finditer(table_pattern, ddl_content, re.IGNORECASE)
         
         for match in table_matches:
-            table_name = match.group(1)
+            full_table_name_with_brackets = match.group(1)
             columns_text = match.group(2)
+
+            # Remove schema prefix "dbo." or "[dbo]." and brackets for the clean table name
+            cleaned_name = full_table_name_with_brackets
+            if cleaned_name.lower().startswith(("[dbo].", "dbo.")):
+                parts = cleaned_name.split('.', 1)
+                if len(parts) > 1: # Check if split produced more than one part
+                    cleaned_name = parts[1]
+            table_name = cleaned_name.replace('[', '').replace(']', '')
             
-            # Extract columns
+            # Extract columns - New line-by-line parsing logic
             columns = []
-            column_pattern = r'\[?(\w+)\]?\s+(\w+(?:\(\d+(?:,\s*\d+)?\))?)\s*(?:,|$)'
-            column_matches = re.finditer(column_pattern, columns_text, re.IGNORECASE)
+            # Regex to capture column name and type from the start of a line.
+            # Group 1: Column Name
+            # Group 2: Full Data Type (e.g., "NVARCHAR(10)", "UNIQUEIDENTIFIER")
+            line_col_pattern = r'^\s*\[?(\w+)\]?\s+([a-zA-Z_][\w\s]*(?:\(\s*(?:\d+|MAX|\d+\s*,\s*\d+)\s*\))?)'
+
+            lines = columns_text.splitlines()
+            for line in lines:
+                trimmed_line = line.strip()
+                
+                # Skip empty lines, comment lines, or constraint definitions (FKs are handled separately by inline_fk_pattern)
+                if not trimmed_line or trimmed_line.startswith('--') or trimmed_line.upper().startswith('CONSTRAINT'):
+                    continue
+
+                col_match = re.match(line_col_pattern, trimmed_line, re.IGNORECASE)
+                if col_match:
+                    column_name = col_match.group(1)
+                    column_type = col_match.group(2).strip() # Ensure type is stripped of trailing spaces
+                    
+                    # Basic filtering for common SQL keywords that might be accidentally captured
+                    common_sql_keywords = {"PRIMARY", "KEY", "NOT", "NULL", "DEFAULT", "CHECK", "UNIQUE", "FOREIGN", "REFERENCES", "CONSTRAINT"}
+                    if column_name.upper() in common_sql_keywords:
+                        # This is likely a mis-parse, skip this line
+                        # print(f"Warning: Possible mis-parse of column name '{column_name}' in table '{table_name}'. Line: '{trimmed_line}'")
+                        continue
+
+                    columns.append({
+                        "name": column_name,
+                        "type": column_type
+                    })
+                # else:
+                    # Optional: print a warning for lines that were not skipped but didn't match column pattern
+                    # print(f"Warning: Line did not match column pattern in table '{table_name}': '{trimmed_line}'")
             
-            for col_match in column_matches:
-                column_name = col_match.group(1)
-                column_type = col_match.group(2)
-                columns.append({
-                    "name": column_name,
-                    "type": column_type
+            self.tables[table_name] = columns # Assign the newly parsed columns
+
+            # New: Parse inline foreign keys from columns_text (original multi-line block)
+            # This pattern assumes FK constraints are defined after all column definitions or intermingled.
+            # It needs to be robust enough not to misinterpret column definitions.
+            inline_fk_pattern = r'CONSTRAINT\s+\[?(\w*)\]?\s+FOREIGN\s+KEY\s*\(\s*\[?(\w+)\]?\s*\)\s*REFERENCES\s+(?:\[?(dbo)\]?\.)?\[?(\w+)\]?\s*\(\s*\[?(\w+)\]?\s*\)'
+            fk_matches_inline = re.finditer(inline_fk_pattern, columns_text, re.IGNORECASE | re.MULTILINE)
+            current_table_name = table_name # The table being processed
+
+            for fk_match in fk_matches_inline:
+                # fk_constraint_name = fk_match.group(1) # e.g., FK_Claims_Patients (optional capture)
+                source_column = fk_match.group(2)    # e.g., Patient_ID
+                # target_schema_prefix = fk_match.group(3) # 'dbo' or None, captured by (dbo)?
+                target_table_raw = fk_match.group(4) # e.g., Patients
+                target_column = fk_match.group(5)    # e.g., Patient_ID
+
+                # Clean target_table_raw name (remove potential schema and brackets)
+                # The regex for target_table_raw is just (\w+), so it should be clean.
+                # If it could capture [dbo].[Table], similar cleaning as source table_name would be needed.
+                # For now, assume target_table_raw is clean as per (\w+).
+                
+                self.relationships.append({
+                    "source_table": current_table_name,
+                    "source_column": source_column,
+                    "target_table": target_table_raw, 
+                    "target_column": target_column
                 })
-            
-            self.tables[table_name] = columns
+
+        # Comment out or delete old ALTER TABLE foreign key parsing
+        # fk_pattern = r'ALTER TABLE\s+\[?(\w+)\]?\s+ADD\s+CONSTRAINT\s+\[?\w+\]?\s+FOREIGN KEY\s*\(\[?(\w+)\]?\)\s+REFERENCES\s+\[?(\w+)\]?\s*\(\[?(\w+)\]?\)'
+        # fk_matches_alter = re.finditer(fk_pattern, ddl_content, re.IGNORECASE)
         
-        # Extract foreign key relationships
-        fk_pattern = r'ALTER TABLE\s+\[?(\w+)\]?\s+ADD\s+CONSTRAINT\s+\[?\w+\]?\s+FOREIGN KEY\s*\(\[?(\w+)\]?\)\s+REFERENCES\s+\[?(\w+)\]?\s*\(\[?(\w+)\]?\)'
-        fk_matches = re.finditer(fk_pattern, ddl_content, re.IGNORECASE)
-        
-        for match in fk_matches:
-            source_table = match.group(1)
-            source_column = match.group(2)
-            target_table = match.group(3)
-            target_column = match.group(4)
+        # for match in fk_matches_alter:
+        #     source_table = match.group(1)
+        #     source_column = match.group(2)
+        #     target_table = match.group(3)
+        #     target_column = match.group(4)
             
-            self.relationships.append({
-                "source_table": source_table,
-                "source_column": source_column,
-                "target_table": target_table,
-                "target_column": target_column
-            })
+        #     self.relationships.append({
+        #         "source_table": source_table,
+        #         "source_column": source_column,
+        #         "target_table": target_table,
+        #         "target_column": target_column
+        #     })
     
     def get_table_info(self) -> Dict[str, List[Dict[str, str]]]:
         """Get information about all tables and their columns."""
