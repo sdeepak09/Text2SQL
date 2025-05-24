@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import json
 import pickle
 from langchain_openai import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
+from langchain_community.vectorstores import FAISS # Updated import
 from langchain.schema import Document
 
 # Load environment variables
