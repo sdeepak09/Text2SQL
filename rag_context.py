@@ -61,13 +61,13 @@ class RAGContextProvider:
     def _format_relevant_statements(self, statements: List[Dict[str, Any]]) -> str:
         """Format the relevant FAISS search results for the LLM, ensuring full content is included."""
         if not statements:
-            return "No relevant statements found from FAISS search." # More descriptive than empty string
+            return "No relevant statements found from FAISS search." # More descriptive
             
         formatted = "Relevant Schema Statements (from FAISS vector search):\n\n" # Clarify origin
         
         for stmt_info in statements:
             metadata = stmt_info.get("metadata", {})
-            content = stmt_info.get("content", "N/A_CONTENT") # Get the full descriptive content
+            content = stmt_info.get("content", "N/A_CONTENT") # Full descriptive content from FAISS
             
             element_type = metadata.get("type", "unknown_element_type")
             name_of_element = metadata.get("name", "unnamed_element")
@@ -77,10 +77,10 @@ class RAGContextProvider:
                 parent_table_name = metadata.get("table_name", "UnknownTable")
                 header += f" (from table: {parent_table_name})"
             
-            formatted += header + "\n" # e.g., -- Extracted information for column: Service_Date (from table: Claim_Lines)
-            formatted += f"Content: {content}\n\n" # e.g., Content: Database column named 'Service_Date'... part of table 'Claim_Lines'...
+            formatted += header + "\n" 
+            formatted += f"Content: {content}\n\n" # Explicitly include the full content
         
-        return formatted.strip() # Remove trailing newlines if any
+        return formatted.strip() # Remove trailing newlines
     
     def _extract_query_terms(self, query: str) -> List[str]:
         """Extract key terms from the query."""
