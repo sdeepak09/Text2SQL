@@ -90,18 +90,14 @@ class SchemaEmbeddingStore:
     def add_schema_elements(self, elements: List[Dict[str, Any]]):
         """Add schema elements to the vector store."""
         documents = []
-        for element in elements:
-            # Create a document for each schema element
-            content = f"{element['type']}: {element['name']}"
-            if element.get('description'):
-                content += f"\nDescription: {element['description']}"
-            if element.get('columns'):
-                columns_str = ", ".join([f"{col['name']} ({col['type']})" for col in element['columns']])
-                content += f"\nColumns: {columns_str}"
-            
+        for element in elements: # element is like {"type": ..., "name": ..., "content": "DETAILED_STRING", "metadata": {"actual_meta": ...}}
+            if 'content' not in element or 'metadata' not in element:
+                print(f"Warning: Skipping element due to missing 'content' or 'metadata': {element}")
+                continue
+
             doc = Document(
-                page_content=content,
-                metadata=element
+                page_content=element['content'], # Use the DETAILED descriptive string here
+                metadata=element['metadata']     # Use the 'metadata' field from the element dict
             )
             documents.append(doc)
         
