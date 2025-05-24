@@ -59,27 +59,28 @@ class RAGContextProvider:
         return formatted
     
     def _format_relevant_statements(self, statements: List[Dict[str, Any]]) -> str:
-        """Format the relevant DDL statements for the LLM."""
+        """Format the relevant FAISS search results for the LLM, ensuring full content is included."""
         if not statements:
-            return ""
+            return "No relevant statements found from FAISS search." # More descriptive than empty string
             
-        formatted = "Relevant Schema Statements:\n\n"
+        formatted = "Relevant Schema Statements (from FAISS vector search):\n\n" # Clarify origin
         
         for stmt_info in statements:
-            # stmt_info is a dict with 'content', 'metadata', and 'score'
             metadata = stmt_info.get("metadata", {})
-            content = stmt_info.get("content", "N/A")
+            content = stmt_info.get("content", "N/A_CONTENT") # Get the full descriptive content
             
-            element_type = metadata.get("type", "unknown_type")
-            # For 'table' type, the name of the table is in metadata['name']
-            # For 'column' type, the table name is in metadata['table_name']
-            # For 'relationship' type, table name context is within the content.
-            table_name = metadata.get("table_name", metadata.get("name", "unknown_table"))
-
-            formatted += f"-- {element_type} for table {table_name}\n"
-            formatted += f"{content}\n\n"
+            element_type = metadata.get("type", "unknown_element_type")
+            name_of_element = metadata.get("name", "unnamed_element")
+            
+            header = f"-- Extracted information for {element_type}: {name_of_element}"
+            if element_type == "column":
+                parent_table_name = metadata.get("table_name", "UnknownTable")
+                header += f" (from table: {parent_table_name})"
+            
+            formatted += header + "\n" # e.g., -- Extracted information for column: Service_Date (from table: Claim_Lines)
+            formatted += f"Content: {content}\n\n" # e.g., Content: Database column named 'Service_Date'... part of table 'Claim_Lines'...
         
-        return formatted
+        return formatted.strip() # Remove trailing newlines if any
     
     def _extract_query_terms(self, query: str) -> List[str]:
         """Extract key terms from the query."""
