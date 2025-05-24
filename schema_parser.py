@@ -153,19 +153,31 @@ class SchemaParser:
         # Process tables and columns
         for table_name, columns_list in self.tables.items():
             # Table element
+            table_content = f"Database table named '{table_name}'. It contains the following columns: {', '.join([col['name'] for col in columns_list])}."
+            if table_name == "Claims":
+                table_content += " This table contains records of patient claims, which can correspond to appointments or service encounters. It includes dates and links to patients and providers."
+            elif table_name == "Claim_Lines":
+                table_content += " This table provides detailed lines for each claim, including specific services or procedures performed, relevant to appointments. It includes service dates."
+            
             elements.append({
                 "type": "table",
                 "name": table_name,
-                "content": f"Table: {table_name} with columns: {', '.join([col['name'] for col in columns_list])}",
+                "content": table_content,
                 "metadata": {"table_name": table_name, "columns": columns_list}
             })
             
             # Column elements
             for column_dict in columns_list:
+                column_content = f"Database column named '{column_dict['name']}' of type '{column_dict['type']}', part of the table '{table_name}'."
+                if table_name == "Claims" and column_dict['name'] == "Claim_Date":
+                    column_content += " This date likely represents when the claim was filed or the primary date of service for the claim/appointment."
+                elif table_name == "Claim_Lines" and column_dict['name'] == "Service_Date":
+                    column_content += " This date specifies when a particular service or procedure on the claim line was rendered, corresponding to an appointment or part of one."
+                
                 elements.append({
                     "type": "column",
                     "name": column_dict['name'],
-                    "content": f"Column: {column_dict['name']} ({column_dict['type']}) in table {table_name}",
+                    "content": column_content,
                     "metadata": {"table_name": table_name, "column_name": column_dict['name'], "column_type": column_dict['type']}
                 })
         
@@ -174,7 +186,7 @@ class SchemaParser:
             elements.append({
                 "type": "relationship",
                 "name": f"{rel_dict['source_table']}.{rel_dict['source_column']}_to_{rel_dict['target_table']}.{rel_dict['target_column']}",
-                "content": f"Relationship: {rel_dict['source_table']}.{rel_dict['source_column']} connects to {rel_dict['target_table']}.{rel_dict['target_column']}",
+                "content": f"Database relationship: The column '{rel_dict['source_column']}' in table '{rel_dict['source_table']}' is linked to column '{rel_dict['target_column']}' in table '{rel_dict['target_table']}'.",
                 "metadata": rel_dict
             })
             

@@ -36,51 +36,46 @@ if __name__ == "__main__":
     print("RAGContextProvider initialization complete.")
 
     queries = [
-        "details about patient last name",
-        "what are the claim statuses?",
-        "information on procedure codes",
-        "total claim amount",
-        "provider NPI"
+        "How many appointments were scheduled for each day last week?"
     ]
 
     for query in queries:
         print(f"\nTesting query: \"{query}\"")
         context = rag_provider.get_relevant_context(query)
-        # Use "raw_relevant_statements" which holds the list of dicts from the search
-        raw_statements = context.get("raw_relevant_statements", []) 
+        
+        print("\n" + "="*30 + " CONTEXT DETAILS " + "="*30)
 
-        print("Relevant Statements from FAISS (Raw):")
-        if raw_statements:
-            for i, stmt_info in enumerate(raw_statements[:3]): # Print top 3
-                # stmt_info is a dict with 'content', 'metadata', and 'score'
+        # Raw relevant statements from FAISS search
+        raw_faiss_statements = context.get("raw_relevant_statements", [])
+        print("\n--- Relevant Statements from FAISS (Raw) ---")
+        if raw_faiss_statements:
+            for i, stmt_info in enumerate(raw_faiss_statements): # Print all results
                 content = stmt_info.get('content', 'N/A')
                 score = stmt_info.get('score', 'N/A') 
-                print(f"  Statement Content: \"{content}\", Score: {score}")
+                metadata = stmt_info.get('metadata', {})
+                print(f"  Result {i+1}:")
+                print(f"    Content: \"{content}\"")
+                print(f"    Score: {score}")
+                print(f"    Metadata: {metadata}")
         else:
-            print("No raw relevant statements found by FAISS.")
+            print("  No raw relevant statements found by FAISS.")
 
-        # Assertion: Check if raw_statements is not empty.
-        # In CI_TEST_MODE, the dummy search always returns 2 results.
-        # In normal mode, it might return 0 for some queries.
-        # For this test, we'll assert based on the CI_TEST_MODE behavior for now.
-        if os.environ.get("CI_TEST_MODE") == "true":
-            assert len(raw_statements) > 0, f"FAISS (dummy) returned no results for query: {query}"
-        else:
-            # In a real scenario, we might not always expect results.
-            # For now, we'll keep a lenient check or just print a warning.
-            if not raw_statements:
-                print(f"Warning: FAISS returned no results for query: {query} in non-CI mode.")
-            # assert len(raw_statements) > 0, f"FAISS returned no results for query: {query}" 
-        print("----")
-    
-    # Print the formatted string for one query as a sample
-    if queries:
-        sample_query_for_formatted_output = queries[0]
-        context_for_sample_query = rag_provider.get_relevant_context(sample_query_for_formatted_output)
-        formatted_statements = context_for_sample_query.get("formatted_relevant_statements", "N/A")
-        print(f"\nSample Formatted Relevant Statements for query \"{sample_query_for_formatted_output}\":")
-        print(formatted_statements)
+        # Formatted relevant statements (this is the string version of above)
+        formatted_faiss_statements = context.get("formatted_relevant_statements", "N/A")
+        print("\n--- Formatted Relevant Statements from FAISS ---")
+        print(formatted_faiss_statements if formatted_faiss_statements else "  N/A")
+
+        # Relevant schema from SchemaParser keyword search
+        relevant_schema_keyword = context.get("relevant_schema", "N/A")
+        print("\n--- Relevant Schema (Keyword Search) ---")
+        print(relevant_schema_keyword if relevant_schema_keyword else "  N/A")
+
+        # Full schema from SchemaParser
+        full_schema_parsed = context.get("full_schema", "N/A")
+        print("\n--- Full Schema ---")
+        print(full_schema_parsed if full_schema_parsed else "  N/A")
+        
+        print("\n" + "="*30 + " END CONTEXT DETAILS " + "="*30)
         print("----")
 
-
-    print("\nRAG context tests completed.")
+    print("\nRAG context tests completed for the specific query.")

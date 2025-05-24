@@ -32,24 +32,29 @@ def create_db_connection(db_path):
 def get_query_explanation_prompt():
     """Get the prompt template for explaining a query."""
     template = """
-You are an expert in SQL and database schema analysis. Your task is to analyze a natural language query and explain how it relates to the database schema.
+You are an expert in SQL and database schema analysis. Your task is to analyze a natural language query and explain how it relates to the **provided database schema context**.
 
+**Database Schema Context:**
 {relevant_schema}
 
 {relevant_statements}
+**End of Database Schema Context.**
 
 User Query: {query}
 
-Analyze the query and provide a structured explanation in JSON format with the following fields:
+Analyze the query and provide a structured explanation in JSON format.
+**Important: All table and column names in your explanation (target_tables, target_columns, etc.) MUST originate from the Database Schema Context provided above. Do not invent or assume any tables or columns not present in the context.**
+
+The JSON output should have the following fields:
 - identified_intent: A brief description of what the user is asking for
-- target_tables: An array of table names that are relevant to the query
-- target_columns: An array of column names that should be included in the result
+- target_tables: An array of table names that are relevant to the query (from the provided context)
+- target_columns: An array of column names that should be included in the result (from the provided context)
 - filter_conditions: Any conditions that should be applied (or null if none)
 - join_conditions: Any joins that need to be performed (or null if none)
 - group_by: Any grouping that should be applied (or null if none)
 - order_by: Any ordering that should be applied (or null if none)
 - limit: Any limit on the number of results (or null if none)
-- summary_of_understanding: A concise explanation of how you understand the query
+- summary_of_understanding: A concise explanation of how you understand the query based on the provided context.
 
 Return your response in this JSON format:
 """
@@ -61,18 +66,21 @@ Return your response in this JSON format:
 def get_sql_generation_prompt():
     """Get the prompt template for generating a SQL query."""
     template = """
-You are an expert SQL developer. Your task is to generate a T-SQL query for Microsoft SQL Server based on a natural language query and its structured explanation.
+You are an expert SQL developer. Your task is to generate a T-SQL query for Microsoft SQL Server based on a natural language query and its structured explanation, using **only the tables and columns described in the provided schema context and query explanation.**
 
+**Database Schema Context:**
 {relevant_schema}
 
 {relevant_statements}
+**End of Database Schema Context.**
 
 Original Query: {query}
 
-Query Explanation:
+**Query Explanation (derived from the schema context):**
 {explanation}
 
-Generate a valid T-SQL query that answers the original query based on the explanation provided.
+Generate a valid T-SQL query that answers the original query.
+**Important: The SQL query MUST strictly use table and column names found in the Query Explanation and/or the Database Schema Context. Do not use any other table or column names.**
 Only return the SQL query without any additional explanation or markdown formatting.
 Ensure the query is compatible with Microsoft SQL Server syntax.
 """
