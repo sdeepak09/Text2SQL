@@ -89,6 +89,14 @@ class SchemaEmbeddingStore:
 
     def add_schema_elements(self, elements: List[Dict[str, Any]]):
         """Add schema elements to the vector store."""
+        print("--- Elements for Embedding from SchemaEmbeddingStore ---")
+        # Print each element for clarity, as the whole list can be large
+        # Ensure json is imported in this file, or import it locally if preferred.
+        for i, element in enumerate(elements):
+            print(f"Element {i}: {json.dumps(element, indent=2)}")
+        if not elements:
+            print("No elements were generated for embedding.")
+        print("--- End of Elements for Embedding ---")
         documents = []
         for element in elements: # element is like {"type": ..., "name": ..., "content": "DETAILED_STRING", "metadata": {"actual_meta": ...}}
             if 'content' not in element or 'metadata' not in element:

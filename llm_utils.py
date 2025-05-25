@@ -56,6 +56,8 @@ The JSON output should have the following fields:
 - limit: Any limit on the number of results (or null if none)
 - summary_of_understanding: A concise explanation of how you understand the query based on the provided context.
 
+**Critical Instruction:** If the User Query mentions concepts (like specific types of data or entities) for which no directly corresponding table or column exists in the 'Database Schema Context', you MUST explicitly state that the concept cannot be directly mapped to the provided schema. Then, you MUST attempt to identify and list the MOST CLOSELY RELATED tables and columns from the 'Database Schema Context' that might be used to indirectly answer the query. Under no circumstances should you invent or assume tables or columns that are not explicitly part of the 'Database Schema Context'. If you determine that no tables or columns in the provided context are even remotely relevant to the user's query, you MUST return empty lists for 'target_tables' and 'target_columns' in your JSON response.
+
 Return your response in this JSON format:
 """
     return PromptTemplate(
@@ -79,9 +81,11 @@ Original Query: {query}
 **Query Explanation (derived from the schema context):**
 {explanation}
 
+**Handling Sparse Explanations:** If the 'Query Explanation' above contains empty 'target_tables' or 'target_columns', you MUST rely primarily on the 'Original Query' and the 'Database Schema Context' (especially 'relevant_schema' and 'relevant_statements') to identify the most appropriate tables and columns. Your main goal is to answer the 'Original Query' using ONLY elements from the 'Database Schema Context'.
+
 Generate a valid T-SQL query that answers the original query.
 **Important Rules:**
-1. The SQL query MUST strictly use table and column names found in the Query Explanation AND that are valid as per the Database Schema Context.
+1. The SQL query MUST strictly use table and column names that are valid as per the 'Database Schema Context'. If the 'Query Explanation' provides 'target_tables' and 'target_columns', these should be strongly preferred, provided they are valid against the 'Database Schema Context'. If the 'Query Explanation' is sparse (e.g., empty 'target_tables'), determine the necessary tables and columns by interpreting the 'Original Query' against the 'Database Schema Context'.
 2. If a column is listed in the Query Explanation (e.g., `target_columns`), ensure it is queried from the correct table it belongs to. The Database Schema Context (especially the 'Relevant Schema Statements' section, which may contain descriptions like 'Column X ... part of table Y') provides the ground truth for table-column relationships. If a join is needed to use this column from its correct table and connect to other tables mentioned in the explanation, you must construct that join.
 3. Do not use any other table or column names not justified by both the explanation and the schema context.
 Only return the SQL query without any additional explanation or markdown formatting.

@@ -1,3 +1,4 @@
+import json # Added import
 from schema_parser import SchemaParser
 from schema_embedding_store import SchemaEmbeddingStore
 from typing import Dict, Any, List, Optional
@@ -9,6 +10,11 @@ class RAGContextProvider:
     def __init__(self, ddl_file_path: str):
         """Initialize with the path to the DDL file."""
         self.schema_parser = SchemaParser(ddl_file_path)
+        parsed_schema_output = self.schema_parser.get_table_info()
+        print("--- Parsed Schema from RAGContextProvider __init__ ---")
+        # Pretty print the dictionary for better readability
+        print(json.dumps(parsed_schema_output, indent=2))
+        print("--- End of Parsed Schema ---")
         self.embedding_store = SchemaEmbeddingStore("data/schema_embeddings_faiss/")
         self.full_schema = self.schema_parser.get_formatted_schema()
 

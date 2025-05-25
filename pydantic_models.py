@@ -22,28 +22,14 @@ class OrderBy(BaseModel):
 class QueryExplanation(BaseModel):
     """A structured explanation of a natural language query."""
     identified_intent: str = Field(description="The main intent of the query (e.g., 'retrieve', 'aggregate', 'filter')")
-    target_tables: List[str] = Field(description="List of tables that need to be queried")
-    target_columns: List[str] = Field(description="List of columns that need to be retrieved or used in calculations")
+    target_tables: List[str] = Field(default_factory=list, description="List of tables that need to be queried")
+    target_columns: List[str] = Field(default_factory=list, description="List of columns that need to be retrieved or used in calculations")
     filter_conditions: Optional[List[FilterCondition]] = Field(default_factory=list, description="List of filter conditions to apply")
     join_conditions: Optional[List[JoinCondition]] = Field(default_factory=list, description="List of join conditions if multiple tables are involved")
     group_by: Optional[List[str]] = Field(default_factory=list, description="List of columns to group by, if any")
     order_by: Optional[OrderBy] = None
     limit: Optional[int] = None
     summary_of_understanding: str = Field(description="A human-readable summary of the query understanding")
-
-    @validator('target_tables')
-    def validate_tables(cls, v):
-        """Validate that at least one table is specified."""
-        if not v:
-            raise ValueError("At least one target table must be specified")
-        return v
-
-    @validator('target_columns')
-    def validate_columns(cls, v):
-        """Validate that at least one column is specified."""
-        if not v:
-            raise ValueError("At least one target column must be specified")
-        return v
 
     def dict(self, *args, **kwargs):
         """Override dict method to handle None values properly."""
