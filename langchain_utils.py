@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain.sql_database import SQLDatabase
 from langchain.prompts import PromptTemplate
+from db_setup import get_formatted_schema
 import time
 import hashlib
 import json
@@ -35,7 +36,7 @@ def create_text2sql_agent(db_path):
     llm = get_llm()
     
     # Get the database schema
-    db_schema = db.get_table_info()
+    db_schema = get_formatted_schema()
     
     # Create a prompt template for SQL generation
     template = """
