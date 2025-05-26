@@ -20,13 +20,19 @@ class SchemaParser:
         with open(self.ddl_file_path, 'r') as f:
             ddl_content = f.read()
         
+        # Helper regex for names (allows for brackets, spaces, dots)
+        # capture_name_sg = r'\[?(\w+)\]?' # Original simpler one for single word names like columns
+        capture_name_sg = r'\[?([\w\.]+)\]?' # Allowing dots for simple names e.g. column_name or schema.column_name
+        capture_name_mg = r'(?:\[([\w\s\.]+)\]|([\w\s\.]+))' # For complex names like tables [dbo.My Table] or dbo.MyTable
+
         # Extract CREATE TABLE statements
-        table_pattern = r'CREATE TABLE\s+\[?(\w+)\]?\s*\(([\s\S]*?)\);'
-        table_matches = re.finditer(table_pattern, ddl_content, re.IGNORECASE)
+        # table_pattern = r'CREATE TABLE\s+\[?(\w+)\]?\s*\(([\s\S]*?)\);' # Original
+        table_pattern = fr'CREATE TABLE\s+{capture_name_mg}\s*\(([\s\S]*?)\);'
+        table_matches = re.finditer(table_pattern, ddl_content, re.IGNORECASE | re.MULTILINE)
         
         for match in table_matches:
-            table_name = match.group(1)
-            columns_text = match.group(2)
+            table_name = match.group(1) or match.group(2) # Group 1 for bracketed, Group 2 for non-bracketed
+            columns_text = match.group(3) # Content of the table definition
             
             # Extract columns
             columns = []
@@ -44,12 +50,17 @@ class SchemaParser:
             self.tables[table_name] = {"columns": columns} # Store columns under a 'columns' key
 
             # Parse inline foreign key constraints within the CREATE TABLE statement
-            inline_fk_pattern = r'CONSTRAINT\s+\[?(\w+)\]?\s+FOREIGN KEY\s*\(\s*\[?(\w+)\]?\s*\)\s*REFERENCES\s+\[?(\w+)\]?\s*\(\s*\[?(\w+)\]?\s*\)'
-            inline_fk_matches = re.finditer(inline_fk_pattern, columns_text, re.IGNORECASE)
+            # inline_fk_pattern = r'CONSTRAINT\s+\[?(\w+)\]?\s+FOREIGN KEY\s*\(\s*\[?(\w+)\]?\s*\)\s*REFERENCES\s+\[?(\w+)\]?\s*\(\s*\[?(\w+)\]?\s*\)' # Original
+            inline_fk_pattern = fr'CONSTRAINT\s+\[?\w+\]?\s+FOREIGN KEY\s*\(\s*{capture_name_sg}\s*\)\s*REFERENCES\s+{capture_name_mg}\s*\(\s*{capture_name_sg}\s*\)'
+            inline_fk_matches = re.finditer(inline_fk_pattern, columns_text, re.IGNORECASE | re.MULTILINE)
             for fk_match in inline_fk_matches:
-                # Group 1 is constraint name, can be ignored for self.relationships
-                source_column = fk_match.group(2)
-                target_table = fk_match.group(3)
+                # fk_match.group(0) is the full match
+                # fk_match.group(1) is source_column from capture_name_sg
+                # fk_match.group(2) is target_table (bracketed part of capture_name_mg)
+                # fk_match.group(3) is target_table (non-bracketed part of capture_name_mg)
+                # fk_match.group(4) is target_column from capture_name_sg
+                source_column = fk_match.group(1)
+                target_table = fk_match.group(2) or fk_match.group(3)
                 target_column = fk_match.group(4)
                 self.relationships.append({
                     "source_table": table_name, # Current table being processed
@@ -59,30 +70,31 @@ class SchemaParser:
                 })
         
         # Extract foreign key relationships defined with ALTER TABLE
-        alter_fk_pattern = r'ALTER TABLE\s+\[?(\w+)\]?\s+ADD\s+(?:CONSTRAINT\s+\[?\w+\]?\s+)?FOREIGN KEY\s*\(\s*\[?(\w+)\]?\s*\)\s+REFERENCES\s+\[?(\w+)\]?\s*\(\s*\[?(\w+)\]?\s*\)'
-        alter_fk_matches = re.finditer(alter_fk_pattern, ddl_content, re.IGNORECASE)
+        # alter_fk_pattern = r'ALTER TABLE\s+\[?(\w+)\]?\s+ADD\s+(?:CONSTRAINT\s+\[?\w+\]?\s+)?FOREIGN KEY\s*\(\s*\[?(\w+)\]?\s*\)\s+REFERENCES\s+\[?(\w+)\]?\s*\(\s*\[?(\w+)\]?\s*\)' #Original
+        alter_fk_pattern = fr'ALTER TABLE\s+{capture_name_mg}\s+ADD\s+(?:CONSTRAINT\s+\[?\w+\]?\s+)?FOREIGN KEY\s*\(\s*{capture_name_sg}\s*\)\s*REFERENCES\s+{capture_name_mg}\s*\(\s*{capture_name_sg}\s*\)'
+        alter_fk_matches = re.finditer(alter_fk_pattern, ddl_content, re.IGNORECASE | re.MULTILINE)
         
-        for match in alter_fk_matches:
-            source_table = match.group(1)
-            source_column = match.group(2) # Adjusted group index if (?:CONSTRAINT...)? part changes numbering
-            target_table = match.group(3)
-            target_column = match.group(4)
-            
-            # Ensure correct group indices if the regex for ALTER TABLE was changed
-            # For the original regex: r'ALTER TABLE\s+\[?(\w+)\]?\s+ADD\s+CONSTRAINT\s+\[?\w+\]?\s+FOREIGN KEY\s*\(\[?(\w+)\]?\)\s+REFERENCES\s+\[?(\w+)\]?\s*\(\[?(\w+)\]?\)'
-            # source_table = match.group(1)
-            # source_column = match.group(2)
-            # target_table = match.group(3)
-            # target_column = match.group(4)
+        for fk_match in alter_fk_matches: # Renamed match to fk_match for clarity
+            # fk_match.group(0) is the full match
+            # fk_match.group(1) is source_table (bracketed part of capture_name_mg for ALTER TABLE)
+            # fk_match.group(2) is source_table (non-bracketed part of capture_name_mg for ALTER TABLE)
+            # fk_match.group(3) is source_column from capture_name_sg
+            # fk_match.group(4) is target_table (bracketed part of capture_name_mg for REFERENCES)
+            # fk_match.group(5) is target_table (non-bracketed part of capture_name_mg for REFERENCES)
+            # fk_match.group(6) is target_column from capture_name_sg
+            source_table = fk_match.group(1) or fk_match.group(2)
+            source_column = fk_match.group(3)
+            target_table = fk_match.group(4) or fk_match.group(5)
+            target_column = fk_match.group(6)
 
             self.relationships.append({
-                "source_table": source_table,
-                "source_column": source_column,
-                "target_table": target_table,
-                "target_column": target_column
+                "source_table": source_table.strip(), # Added strip just in case
+                "source_column": source_column.strip(),
+                "target_table": target_table.strip(),
+                "target_column": target_column.strip()
             })
     
-    def get_table_info(self) -> Dict[str, Any]: # Return type changed to Any
+    def get_table_info(self) -> Dict[str, Any]:
         """Get information about all tables and their columns."""
         # table_info = {table_name: columns for table_name, columns_data in self.tables.items()}
         # Corrected to reflect self.tables structure:
@@ -159,9 +171,9 @@ class SchemaParser:
             for term in query_terms:
                 for key, values in semantic_matches.items():
                     if term in values or key == term:
-                        for table_name, columns in self.tables.items():
+                        for table_name, table_data_loop in self.tables.items(): # Changed 'table_data' to 'table_data_loop' to avoid conflict
                             if key in table_name.lower():
-                        relevant_tables[table_name] = table_data['columns'] # Store list of columns
+                                relevant_tables[table_name] = table_data_loop['columns'] # Corrected indentation and variable
         
         # Find relationships involving the relevant tables
         for rel in self.relationships:
@@ -188,30 +200,37 @@ class SchemaParser:
         }
 
 if __name__ == '__main__':
-    # Create a dummy DDL file for demonstration if it doesn't exist
-    dummy_ddl_path = 'data/database_schema.sql'
-    os.makedirs('data', exist_ok=True)
+    # Use the actual DDL file if it exists, otherwise create/use the dummy one.
+    actual_ddl_path = 'data/database_schema.sql'
+    
+    # Ensure 'data' directory exists
+    os.makedirs(os.path.dirname(actual_ddl_path), exist_ok=True)
 
-    if not os.path.exists(dummy_ddl_path):
-        print(f"Creating dummy DDL file: {dummy_ddl_path}")
-        with open(dummy_ddl_path, 'w') as f:
+    if not os.path.exists(actual_ddl_path):
+        print(f"Actual DDL file {actual_ddl_path} not found. Creating a dummy one for demonstration.")
+        with open(actual_ddl_path, 'w') as f:
             f.write(
+                "-- Dummy DDL for SchemaParser testing --\n"
                 "CREATE TABLE Users (user_id INT PRIMARY KEY, username VARCHAR(50), email VARCHAR(100), registration_date DATE);\n"
-                "CREATE TABLE Products (product_id INT PRIMARY KEY, product_name VARCHAR(100), price DECIMAL(10, 2), category_id INT);\n"
+                "CREATE TABLE [dbo.Products] (product_id INT PRIMARY KEY, product_name VARCHAR(100), price DECIMAL(10, 2), category_id INT);\n"
                 "CREATE TABLE Categories (category_id INT PRIMARY KEY, category_name VARCHAR(50));\n"
                 "CREATE TABLE Orders (order_id INT PRIMARY KEY, user_id INT, order_date TIMESTAMP, total_amount MONEY, "
                 "CONSTRAINT FK_UserOrder FOREIGN KEY (user_id) REFERENCES Users(user_id));\n"
-                "CREATE TABLE Claims (ClaimID INT PRIMARY KEY, PolicyID INT, ClaimDate DATE, ClaimAmount DECIMAL(18,2), Description TEXT, "
-                "CONSTRAINT FK_Claims_Policies FOREIGN KEY (PolicyID) REFERENCES Policies(PolicyID));\n" # Inline FK
-                "CREATE TABLE Policies (PolicyID INT PRIMARY KEY, PolicyNumber VARCHAR(255), CustomerID INT, StartDate DATE, EndDate DATE, PremiumAmount DECIMAL(18,2));\n" # Assume Policies table for the FK above
-                "ALTER TABLE Products ADD CONSTRAINT fk_category FOREIGN KEY (category_id) REFERENCES Categories(category_id);\n"
-                "ALTER TABLE Policies ADD CONSTRAINT FK_Policies_Customers FOREIGN KEY (CustomerID) REFERENCES Customers(CustomerID);\n" # Assume Customers table
+                "CREATE TABLE [dbo.Claims] (ClaimID INT PRIMARY KEY, PolicyID INT, ClaimDate DATE, ClaimAmount DECIMAL(18,2), Description TEXT, "
+                "CONSTRAINT FK_Claims_Policies FOREIGN KEY (PolicyID) REFERENCES [dbo.Policies](PolicyID));\n" # Inline FK with complex names
+                "CREATE TABLE [dbo.Policies] (PolicyID INT PRIMARY KEY, PolicyNumber VARCHAR(255), CustomerID INT, StartDate DATE, EndDate DATE, PremiumAmount DECIMAL(18,2));\n"
+                "ALTER TABLE [dbo.Products] ADD CONSTRAINT fk_category FOREIGN KEY (category_id) REFERENCES Categories(category_id);\n"
+                "ALTER TABLE [dbo.Policies] ADD CONSTRAINT FK_Policies_Customers FOREIGN KEY (CustomerID) REFERENCES Customers(CustomerID);\n" 
                 "CREATE TABLE Customers (CustomerID INT PRIMARY KEY, CustomerName VARCHAR(255));\n"
+                "ALTER TABLE [dbo.Orders] ADD FOREIGN KEY ([user_id]) REFERENCES [Users] ([user_id]);\n" # Example with brackets
             )
+    else:
+        print(f"Using existing DDL file: {actual_ddl_path}")
+
 
     try:
-        print(f"Parsing schema from: {dummy_ddl_path}")
-        parser = SchemaParser(dummy_ddl_path)
+        print(f"Parsing schema from: {actual_ddl_path}")
+        parser = SchemaParser(actual_ddl_path)
         
         print("\n--- Parsed Tables ---")
         for table_name, data in parser.tables.items():
@@ -227,17 +246,23 @@ if __name__ == '__main__':
             print("  No relationships found.")
 
         # Specifically checking for Claims table relationships as per requirements
-        print("\n--- Checking Claims Table Relationships ---")
-        claims_rels_found = False
+        print("\n--- Checking 'dbo.Claims' Table Relationships (and other complex names) ---")
+        claims_rels_found_count = 0
         for rel in parser.relationships:
-            if rel['source_table'] == 'Claims':
+            # Check for claims, and also test if complex names like dbo.Products are parsed correctly
+            if 'claims' in rel['source_table'].lower() or 'products' in rel['source_table'].lower() or 'orders' in rel['source_table'].lower():
                 print(f"  Found: {rel['source_table']}.{rel['source_column']} -> {rel['target_table']}.{rel['target_column']}")
-                claims_rels_found = True
-        if not claims_rels_found:
-            print("  No relationships found originating from the Claims table.")
+                if 'claims' in rel['source_table'].lower():
+                    claims_rels_found_count +=1
+        
+        if claims_rels_found_count == 0:
+            print("  No relationships found originating from a 'Claims' table.")
+        else:
+            print(f"  Found {claims_rels_found_count} relationships originating from a 'Claims' table.")
+
 
     except FileNotFoundError as e:
-        print(f"Error: {e}")
+        print(f"Error: DDL File not found. {e}")
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
         import traceback
