@@ -102,6 +102,29 @@ if USE_LANGGRAPH:
         if st.session_state.get("show_debug", False):
             st.success(f"OPENAI_API_KEY is set (starts with {openai_api_key[:4]}...)")
 
+# --- FAISS Index Check ---
+# This path should be consistent with where main_pipeline.py and query_embedding_store.py save the index.
+FAISS_INDEX_FOLDER_PATH = "data/context_faiss_store_v1"
+faiss_actual_index_file = os.path.join(FAISS_INDEX_FOLDER_PATH, "index.faiss")
+
+if not os.path.exists(faiss_actual_index_file):
+    st.error(
+        f"""🛑 **FAISS Vector Index Not Found!** 🛑
+
+The Text2SQL RAG pipeline requires a FAISS vector index at `{FAISS_INDEX_FOLDER_PATH}`
+to function correctly. This index stores embeddings of your schema and example queries.
+
+**To build the index, please run the following command in your terminal from the project root directory:**
+```
+python main_pipeline.py
+```
+
+After running the command, please refresh this page.
+The application's SQL generation capabilities will be limited or non-functional until the index is built.
+"""
+    )
+# --- End FAISS Index Check ---
+
 # Initialize debug mode
 if "show_debug" not in st.session_state:
     st.session_state.show_debug = False
