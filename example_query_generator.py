@@ -100,10 +100,10 @@ class ExampleQueryGenerator:
             if not self.schema_parser.relationships: continue
             
             relationship = random.choice(self.schema_parser.relationships)
-            from_table = relationship['from_table']
-            to_table = relationship['to_table']
-            from_col = relationship['from_column']
-            to_col = relationship['to_column']
+            from_table = relationship['source_table'] # Key corrected
+            to_table = relationship['target_table']   # Key corrected
+            from_col = relationship['source_column'] # Key corrected
+            to_col = relationship['target_column']   # Key corrected
 
             # Ensure tables exist before trying to get columns
             if from_table not in self.schema_parser.tables or to_table not in self.schema_parser.tables:
@@ -158,15 +158,18 @@ class ExampleQueryGenerator:
 
                 # Try to chain them: T1 -> T2 -> T3
                 # If rel1: T1.col1 -> T2.col2  AND rel2: T2.col3 -> T3.col4
-                if rel1['to_table'] == rel2['from_table'] and rel1['from_table'] != rel2['to_table']: # Avoid self-joins for simplicity here
-                    t1 = rel1['from_table']
-                    t2 = rel1['to_table'] # Same as rel2['from_table']
-                    t3 = rel2['to_table']
+                # Corrected keys for rel1 and rel2
+                if rel1['target_table'] == rel2['source_table'] and \
+                   rel1['source_table'] != rel2['target_table']: # Avoid self-joins for simplicity here
+                    
+                    t1 = rel1['source_table']
+                    t2 = rel1['target_table'] # Same as rel2['source_table']
+                    t3 = rel2['target_table']
 
-                    t1_pk = rel1['from_column']
-                    t2_fk_for_t1 = rel1['to_column']
-                    t2_pk_for_t3 = rel2['from_column']
-                    t3_fk = rel2['to_column']
+                    t1_pk = rel1['source_column']
+                    t2_fk_for_t1 = rel1['target_column']
+                    t2_pk_for_t3 = rel2['source_column']
+                    t3_fk = rel2['target_column']
                     
                     # Ensure tables exist
                     if not all(tbl in self.schema_parser.tables for tbl in [t1, t2, t3]):
