@@ -36,16 +36,30 @@ class SchemaParser:
             
             # Extract columns
             columns = []
-            column_pattern = r'\[?(\w+)\]?\s+(\w+(?:\(\d+(?:,\s*\d+)?\))?)\s*(?:,|$)'
-            column_matches = re.finditer(column_pattern, columns_text, re.IGNORECASE)
-            
-            for col_match in column_matches:
-                column_name = col_match.group(1)
-                column_type = col_match.group(2)
-                columns.append({
-                    "name": column_name,
-                    "type": column_type
-                })
+            # New robust column pattern
+            # Explanation:
+            # ^\s*: Matches the beginning of a line/segment.
+            # (?:\[(?P<name_b>[\w\s\.]+)\]|(?P<name>[\w\s\.]+)): Named groups name_b (bracketed) or name (non-bracketed) for the column name. Allows spaces and dots.
+            # \s+: Separator.
+            # (?P<type>\w+(?:\(\s*\d+(?:\s*,\s*\d+)?\s*\))?(?:\s*(?:UNSIGNED|ZEROFILL))?(?:\s*CHARACTER\s+SET\s+[\w]+)?(?:\s*COLLATE\s+[\w_]+)?): Named group type. Captures base type, optional numeric attributes, and optional character set/collation.
+            # (?:.*?(?:,|\)|$)): Non-greedily consumes any characters until comma, closing parenthesis, or end of string/line.
+            new_column_pattern = re.compile(
+                r"^\s*"                                      # Start of a line or segment
+                r"(?:\[(?P<name_b>[\w\s\.]+)\]|(?P<name>[\w\s\.]+))"  # Column name (bracketed or not, allows spaces and dots)
+                r"\s+"                                       # Whitespace after name
+                r"(?P<type>\w+(?:\(\s*\d+(?:\s*,\s*\d+)?\s*\))?(?:\s*(?:UNSIGNED|ZEROFILL))?(?:\s*CHARACTER\s+SET\s+[\w]+)?(?:\s*COLLATE\s+[\w_]+)?)"  # Data type
+                r"(?:.*?(?:,|\)|$))",                         # Non-greedily consume the rest until a comma or end of definition block
+                re.IGNORECASE | re.MULTILINE
+            )
+
+            for col_match in new_column_pattern.finditer(columns_text):
+                name_b = col_match.group('name_b')
+                name_val = col_match.group('name') # Renamed 'name' to 'name_val' to avoid conflict with 'name' in columns.append
+                column_name = name_b if name_b else name_val
+                column_type = col_match.group('type')
+                
+                if column_name and column_type: # Ensure essential parts were captured
+                     columns.append({"name": column_name.strip(), "type": column_type.strip()})
             
             self.tables[table_name] = {"columns": columns} # Store columns under a 'columns' key
 
