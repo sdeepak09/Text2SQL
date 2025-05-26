@@ -6,6 +6,11 @@ import pickle
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS # Updated import
 from langchain.schema import Document
+import logging
+
+# Configure logging at INFO level
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -74,18 +79,14 @@ class SchemaEmbeddingStore:
             self._create_new_store()
     
     def _create_new_store(self):
-        """Create a new vector store."""
-        print("Creating new schema embedding store...")
-        # Create a dummy document for initialization, even in CI mode, 
-        # as FAISS.from_documents expects at least one document.
-        initial_doc = [Document(page_content="schema_placeholder", metadata={"type": "placeholder"})]
-        
+        """Create a new vector store (without injecting a dummy placeholder).
+        (If no documents are provided, FAISS.from_documents will raise an error.)
+        (In production, ensure that add_schema_elements is called with actual schema elements.)"""
         self.vector_store = FAISS.from_documents(
-            documents=initial_doc, 
+            documents=[], 
             embedding=self.embeddings_model
         )
-        print("Created new schema embedding store with placeholder document (not saved yet).")
-        # self._save_store() # Removed call to save store immediately after creation
+        print("Created new (empty) schema embedding store (not saved yet).")
 
     def add_schema_elements(self, elements: List[Dict[str, Any]]):
         """Add schema elements to the vector store."""
@@ -112,9 +113,7 @@ class SchemaEmbeddingStore:
         # Create a new vector store with the documents
         if not documents:
             print("No documents to add to the vector store.")
-            # Ensure vector_store is not None if it was just created with placeholder
-            if not self.vector_store:
-                 self._create_new_store() # Should be initialized already
+            # (If no documents are provided, the vector store remains empty.)
             return
 
         self.vector_store = FAISS.from_documents(
@@ -135,65 +134,38 @@ class SchemaEmbeddingStore:
             return
         
         if self.vector_store is not None:
-            os.makedirs(self.cache_path, exist_ok=True) # self.cache_path is now a directory
+            os.makedirs(self.cache_path, exist_ok=True)
             self.vector_store.save_local(folder_path=self.cache_path)
             print(f"Saved schema embeddings to {self.cache_path}")
         else:
             print("Warning: Vector store not initialized, nothing to save.")
     
     def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
-        """Search for schema elements relevant to the query."""
-        if self.ci_test_mode:
-            print(f"CI_TEST_MODE: Simulating search for query: '{query}'")
-            # Return dummy results that look like the real ones
-            # Ensure metadata has 'type' and 'name' as used in get_relevant_schema_context
-            dummy_results = []
-            for i in range(min(k, 2)): # Return 2 dummy results
-                dummy_results.append({
-                    "content": f"Dummy content for query '{query}', result {i+1}",
-                    "metadata": {
-                        "type": "table" if i % 2 == 0 else "column", 
-                        "name": f"DummyTable{i+1}" if i % 2 == 0 else f"DummyColumn{i+1}",
-                        "table_name": f"DummyTable{i+1}" if i % 2 == 0 else f"SomeTableForCol{i+1}",
-                        "columns": [{"name": f"col{j}", "type": "VARCHAR"} for j in range(2)] if i % 2 == 0 else [],
-                        "column_name": f"DummyColumn{i+1}" if i % 2 != 0 else "",
-                        "column_type": "VARCHAR" if i % 2 != 0 else ""
-                    },
-                    "score": 0.1 * (i + 1) 
-                })
-            return dummy_results
-
+        """Search for relevant schema elements."""
         if not self.vector_store:
-            print("Vector store not initialized.")
             return []
         
         try:
-            results = self.vector_store.similarity_search_with_score(query, k=k)
+            # Use similarity search with score to get better results
+            results = self.vector_store.similarity_search_with_score(query, k=k*2)  # Get more results initially
+            
+            # Filter and format results
+            formatted_results = []
+            for doc, score in results:
+                # Only include results with reasonable similarity scores
+                if score < 1.5:  # Adjust threshold as needed
+                    formatted_results.append({
+                        "content": doc.page_content,
+                        "metadata": doc.metadata,
+                        "score": float(score)
+                    })
+            
+            # Return top k results
+            return formatted_results[:k]
+            
         except Exception as e:
-            print(f"Error during FAISS similarity search: {e}")
-            # This can happen if the store is empty or not properly initialized
-            # For example, if FAISS was initialized with empty docs AND dummy embeddings that return all zeros.
-            # FAISS might complain about non-normalized vectors or other issues.
-            if "no data added" in str(e).lower() or "normalize_L2" in str(e):
-                print("Attempting to return placeholder results due to FAISS error.")
-                # Fallback to placeholder if search fails catastrophically
-                return [{
-                    "content": "Placeholder due to search error",
-                    "metadata": {"type": "error", "name": "SearchError"},
-                    "score": 1.0
-                }]
+            print(f"Error in embedding search: {e}")
             return []
-        
-        # Format the results
-        formatted_results = []
-        for doc, score in results:
-            formatted_results.append({
-                "content": doc.page_content,
-                "metadata": doc.metadata,
-                "score": float(score)
-            })
-        
-        return formatted_results
     
     def get_relevant_schema_context(self, query: str, k: int = 5) -> str:
         """Get a formatted string of schema elements relevant to the query."""
@@ -213,4 +185,21 @@ class SchemaEmbeddingStore:
                 # Format other schema elements
                 context_parts.append(f"{metadata['type']}: {metadata['name']}\n{result['content']}\n")
         
-        return "\n".join(context_parts) 
+        return "\n".join(context_parts)
+
+    def search_vector_store(self, query: str, top_k: int = 5) -> List[str]:
+        """Search the vector store for relevant statements"""
+        if not self.vector_store:
+            self._create_new_store()
+            if not self.vector_store:
+                return []
+        
+        try:
+            results = self.vector_store.similarity_search_with_score(query, k=top_k)
+            statements = []
+            for doc, score in results:
+                statements.append(doc.page_content)
+            return statements
+        except Exception as e:
+            print(f"Error in embedding search: {e}")
+            return [] 

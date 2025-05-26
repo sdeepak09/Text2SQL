@@ -1,6 +1,11 @@
 import re
 import os
 from typing import Dict, List, Any, Optional
+import logging
+
+# Configure logging at INFO level
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class SchemaParser:
     """Parse SQL DDL files to extract schema information."""
@@ -140,111 +145,72 @@ class SchemaParser:
         
         return schema_str
     
-    def search_schema(self, query: str) -> Dict[str, Any]:
-        """Search the schema for relevant tables and columns based on a query."""
-        query_terms = set(re.findall(r'\b\w+\b', query.lower()))
-        
-        relevant_tables = {}
-        relevant_relationships = []
-        
-        # Find relevant tables and columns
-        for table_name, columns in self.tables.items():
-            if table_name.lower() in query_terms:
-                relevant_tables[table_name] = columns
-                continue
-                
-            relevant_columns = []
-            for column in columns:
-                if column['name'].lower() in query_terms:
-                    relevant_columns.append(column)
-            
-            if relevant_columns:
-                relevant_tables[table_name] = relevant_columns
-        
-        # If no direct matches, include tables with semantic similarity
+    def search_schema(self, query: str) -> List[str]:
+        """Search for relevant tables based only on table/column name matches."""
+        query_lower = query.lower()
+        relevant_tables = set()
+        query_tokens = set(re.findall(r'\w+', query_lower))
+
+        # Match query tokens with table names (partial/fuzzy match)
+        for table_name in self.tables.keys():
+            table_name_lower = table_name.lower()
+            if any(token in table_name_lower for token in query_tokens):
+                relevant_tables.add(table_name)
+
+        # Match query tokens with column names (partial/fuzzy match)
+        for table_name, columns_list in self.tables.items():
+            for column_dict in columns_list:
+                column_name_lower = column_dict['name'].lower()
+                if any(token in column_name_lower for token in query_tokens):
+                    relevant_tables.add(table_name)
+
+        # If nothing found, return all tables (or empty list if you prefer)
         if not relevant_tables:
-            # Simple heuristic for semantic matching
-            semantic_matches = {
-                "employee": ["employees", "staff", "personnel"],
-                "department": ["departments", "divisions", "teams"],
-                "salary": ["compensation", "pay", "wage"],
-                "sale": ["sales", "revenue", "transaction"],
-                "product": ["products", "items", "goods"],
-                "customer": ["customers", "clients", "buyers"]
-            }
-            
-            for term in query_terms:
-                for key, values in semantic_matches.items():
-                    if term in values or key == term:
-                        for table_name, columns in self.tables.items():
-                            if key in table_name.lower():
-                                relevant_tables[table_name] = columns
-        
-        # Find relationships involving the relevant tables
-        for rel in self.relationships:
-            if rel['source_table'] in relevant_tables or rel['target_table'] in relevant_tables:
-                relevant_relationships.append(rel)
-                
-                # Add the related tables if they're not already included
-                if rel['source_table'] not in relevant_tables:
-                    relevant_tables[rel['source_table']] = self.tables[rel['source_table']]
-                if rel['target_table'] not in relevant_tables:
-                    relevant_tables[rel['target_table']] = self.tables[rel['target_table']]
-        
-        # If still no tables found, return a subset of the schema
-        if not relevant_tables and self.tables:
-            # Return a few important tables as fallback
-            table_names = list(self.tables.keys())
-            for i in range(min(3, len(table_names))):
-                relevant_tables[table_names[i]] = self.tables[table_names[i]]
-        
-        return {
-            "tables": relevant_tables,
-            "relationships": relevant_relationships
-        }
+            return list(self.tables.keys())
+        return list(relevant_tables)
     
     def get_elements_for_embedding(self) -> List[Dict[str, Any]]:
-        """Extract schema elements for embedding."""
+        """Extract schema elements for embedding, using only schema structure."""
         elements = []
-        
-        # Process tables and columns
+
+        # Tables and columns
         for table_name, columns_list in self.tables.items():
-            # Table element
-            table_content = f"Database table named '{table_name}'. It contains the following columns: {', '.join([col['name'] for col in columns_list])}."
-            if table_name == "Claims":
-                table_content += " This table contains records of patient claims, which can correspond to appointments or service encounters. It includes dates and links to patients and providers."
-            elif table_name == "Claim_Lines":
-                table_content += " This table provides detailed lines for each claim, including specific services or procedures performed, relevant to appointments. It includes service dates."
-            
+            # Table element (generic description)
+            table_content = f"Table: {table_name} with columns: {', '.join([col['name'] for col in columns_list])}."
             elements.append({
                 "type": "table",
                 "name": table_name,
                 "content": table_content,
                 "metadata": {"table_name": table_name, "columns": columns_list}
             })
-            
-            # Column elements
+
+            # Column elements (generic description)
             for column_dict in columns_list:
-                column_content = f"Database column named '{column_dict['name']}' of type '{column_dict['type']}', part of the table '{table_name}'."
-                if table_name == "Claims" and column_dict['name'] == "Claim_Date":
-                    column_content += " This date likely represents when the claim was filed or the primary date of service for the claim/appointment."
-                elif table_name == "Claim_Lines" and column_dict['name'] == "Service_Date":
-                    column_content += " This date specifies when a particular service or procedure on the claim line was rendered, corresponding to an appointment or part of one."
-                
+                column_content = (
+                    f"Column: {column_dict['name']} of type {column_dict['type']}, part of table {table_name}."
+                )
                 elements.append({
                     "type": "column",
                     "name": column_dict['name'],
                     "content": column_content,
-                    "metadata": {"table_name": table_name, "column_name": column_dict['name'], "column_type": column_dict['type']}
+                    "metadata": {
+                        "table_name": table_name,
+                        "column_name": column_dict['name'],
+                        "column_type": column_dict['type']
+                    }
                 })
-        
-        # Process relationships
+
+        # Foreign key relationships (generic)
         for rel_dict in self.relationships:
+            rel_content = (
+                f"Relationship: {rel_dict['source_table']}.{rel_dict['source_column']} "
+                f"references {rel_dict['target_table']}.{rel_dict['target_column']}."
+            )
             elements.append({
                 "type": "relationship",
                 "name": f"{rel_dict['source_table']}.{rel_dict['source_column']}_to_{rel_dict['target_table']}.{rel_dict['target_column']}",
-                "content": f"Database relationship: The column '{rel_dict['source_column']}' in table '{rel_dict['source_table']}' is linked to column '{rel_dict['target_column']}' in table '{rel_dict['target_table']}'.",
+                "content": rel_content,
                 "metadata": rel_dict
             })
-            
+
         return elements
