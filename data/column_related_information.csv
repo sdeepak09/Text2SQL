@@ -8,7 +8,7 @@ HealthcareDB,Patients,ADDRESS_1,varchar(255),The primary street address line for
 HealthcareDB,Patients,CITY,varchar(100),The city where the patient resides.,Text,N/A,N/A
 HealthcareDB,Patients,STATE,varchar(50),The state or province where the patient resides.,"Text (e.g., state codes or full names)",N/A,N/A
 HealthcareDB,Patients,ZIP_CODE,varchar(20),The postal or ZIP code for the patient's address.,Text (alphanumeric postal codes),N/A,N/A
-HealthcareDB,ADMISSIONS,ADMISSION_ID,"int IDENTITY(1,1)",Auto-incrementing unique identifier for each admission record. Primary key for this table.,System-generated integers,N/A,N/A
+HealthcareDB,ADMISSIONS,ADMISSION_ID,"int IDENTITY(1,1)",Unique integer identifier for each admission record (e.g., 1, 2, 3). Often used as the Claim ID. Primary key for this table.,System-generated integers,N/A,N/A
 HealthcareDB,ADMISSIONS,MEMBER,varchar(50),"Unique member identifier, linking this admission record to a specific patient in the Patients table.",Existing MEMBER IDs from Patients table,N/A,Patients
 HealthcareDB,ADMISSIONS,CONFINEMENT_NBR,tinyint,A number used for tracking individual confinements or admissions for a patient.,Small integers,N/A,N/A
 HealthcareDB,ADMISSIONS,EPISODE_NBA,smallint,A number identifying a specific episode of care to which this admission belongs.,Integers,N/A,N/A
@@ -18,17 +18,17 @@ HealthcareDB,ADMISSIONS,DISCHARGE_DT,varchar(50),"The most recent 'To Date' of R
 HealthcareDB,ADMISSIONS,LENGTH_OF_STAY,tinyint,"The length of the patient's stay for this confinement, typically calculated in days.",Small integers (number of days),N/A,N/A
 HealthcareDB,ADMISSIONS,EPISODE_TYPE,tinyint,"A code indicating the type of episode of care, based on relevant categorization or procedures.",Integer codes (specific definitions external),N/A,(Lookup table likely)
 HealthcareDB,ADMISSIONS,CONFINEMENT_TYPE,tinyint,"A code indicating the nature of the admission (e.g., emergency, planned, elective).",Integer codes (specific definitions external),N/A,(Lookup table likely)
-HealthcareDB,ADMISSIONS,PROV_ID,datetime2(7),Provider ID of the facility from the Room & Board revenue records. (Unusual data type for an ID),"Datetime values (likely an error in original DDL, usually varchar/int)",N/A,(Provider table likely)
-HealthcareDB,ADMISSIONS,RESPONSIBLE_PROV_ID,varchar(1),Identifier for the provider primarily responsible for the patient's care during this admission.,Single character or short code,N/A,(Provider table likely)
+HealthcareDB,ADMISSIONS,PROV_ID,datetime2(7),"Identifier of the facility associated with the admission. Note: The original data type (datetime2(7)) is unusual for an ID and might represent raw data; treat as a textual identifier if possible.","Datetime values (likely an error in original DDL, usually varchar/int)",N/A,(Provider table likely)
+HealthcareDB,ADMISSIONS,RESPONSIBLE_PROV_ID,varchar(1),"Identifier (typically a single character) for the individual provider primarily responsible for the patient's care during this admission. To determine provider specialty, a separate provider directory table (not currently available in this schema) would be needed.",Single character or short code,N/A,(Provider table likely)
 HealthcareDB,ADMISSIONS,PATIENT_STS,nvarchar(1),"A code representing the patient's status during the confinement (e.g., 'A' for active, 'D' for discharged).","e.g., 'A', 'D'",N/A,(Lookup table likely)
 HealthcareDB,ADMISSIONS,GNDR,nvarchar(50),The gender of the patient as recorded for this admission.,"e.g., 'Male', 'Female', 'Other'",N/A,N/A
 HealthcareDB,ADMISSIONS,ADMSN_AGE,tinyint,The age of the patient at the time of this admission.,Small integers (age in years),N/A,N/A
 HealthcareDB,ADMISSIONS,DISCHARGE_AGE,tinyint,The age of the patient at the time of discharge from this admission.,Small integers (age in years),N/A,N/A
 HealthcareDB,ADMISSIONS,FACILITY_TYPE,tinyint,A code indicating the type of healthcare facility where the admission occurred.,Integer codes (specific definitions external),N/A,(Lookup table likely)
 HealthcareDB,ADMISSIONS,BED_TYPE,tinyint,A code indicating the type of bed assigned to the patient during this confinement.,Integer codes (specific definitions external),N/A,(Lookup table likely)
-HealthcareDB,ADMISSIONS,PROC_CD,nvarchar(1),A code for any specific primary procedure performed during this confinement.,Single character or short code,N/A,(Procedure code table)
+HealthcareDB,ADMISSIONS,PROC_CD,nvarchar(1),"Code for the primary procedure performed during the admission (claim). This is typically a single character code. For detailed procedures, see also ICD_PROC_CD.",Single character or short code,N/A,(Procedure code table)
 HealthcareDB,ADMISSIONS,ICD_DIAG_CD,nvarchar(50),The primary ICD (International Classification of Diseases) diagnosis code from the most recent Room & Board service record for this confinement.,"Valid ICD codes (e.g., ICD-10 format)",N/A,(Diagnosis code table)
-HealthcareDB,ADMISSIONS,ICD_PROC_CD,nvarchar(1),An ICD procedure code for any specific procedures performed during this confinement.,Single character or short code,N/A,(Procedure code table)
+HealthcareDB,ADMISSIONS,ICD_PROC_CD,nvarchar(1),"ICD-based procedure code for any significant procedures performed during the admission (claim). This is typically a single character code. For primary procedure, see also PROC_CD.",Single character or short code,N/A,(Procedure code table)
 HealthcareDB,ADMISSIONS,ICD_TYPE,tinyint,"A code indicating the version of the ICD code set used (e.g., 9 for ICD-9, 10 for ICD-10).","e.g., 9, 10",N/A,N/A
 HealthcareDB,ADMISSIONS,TOTAL_ALLOWED,float,The total allowed monetary amount for all services and charges within this confinement.,Numeric (currency),N/A,N/A
 HealthcareDB,ADMISSIONS,TOTAL_PAID,float,The total monetary amount paid for all services and charges within this confinement.,Numeric (currency),N/A,N/A

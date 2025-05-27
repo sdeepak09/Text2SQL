@@ -97,12 +97,30 @@ def main():
     
     # Sample questions tailored to the dummy DDL (adjust if using a different DDL)
     user_questions = [
-        "Show me all claims with a total amount greater than $500.",
-        "What are the full names of users born before 1990, along with their insurance policy IDs?",
-        "List all procedures performed for claim ID 'Claim001'.", # Assuming Claim001 is a valid ID in dummy data
-        "Find providers in the 'Cardiology' specialty and count how many distinct claims each has handled.",
-        "What are the policy types and their start dates for policies that end after December 31, 2024?"
+        # Example 1: Based on ADMISSIONS table (financials)
+        # Assumes ADMISSIONS.TOTAL_ALLOWED or ADMISSIONS.TOTAL_PAID can be used for 'claim amount'.
+        "Show all admission records where the total allowed amount is greater than 500.",
+
+        # Example 2: Based on Patients table (demographics) and ADMISSIONS (linking)
+        # The 'insurance policy ID' concept is not directly in the CSV schema as described.
+        # This question is modified to use existing fields.
+        "List the first name, last name, and date of birth for patients associated with admissions having an ADMISSION_ID less than 10.",
+
+        # Example 3: Procedures for a given ADMISSION_ID (integer)
+        # This now uses an integer ID and refers to procedure codes.
+        "What are the procedure codes (PROC_CD, ICD_PROC_CD) for admission ID 75?", # Using an example integer ID
+
+        # Example 4: Querying responsible provider IDs (specialty is not available)
+        # This avoids asking for specialty directly.
+        "Show the responsible provider IDs (RESPONSIBLE_PROV_ID) and a count of admissions for each from the ADMISSIONS table.",
+
+        # Example 5: Based on ADMISSIONS table (dates)
+        # 'Policy types' and 'policy end dates' are not in the CSV ADMISSIONS table.
+        # This question is modified to use ADMISSIONS.ADMIT_DT or DISCHARGE_DT.
+        "List admission IDs and their admit dates for admissions that occurred after January 1, 2023."
     ]
+    print("NOTE: The following questions are tailored for a schema derived from CSV files (Patients, Admissions, etc.).")
+    print("For these to work correctly with main_pipeline.py, the FAISS index (context store) would also need to be built from the CSV schema descriptions, not the dummy DDL.")
 
     for user_question in user_questions:
         print(f"\n--- Processing Question: \"{user_question}\" ---")

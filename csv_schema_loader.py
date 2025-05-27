@@ -50,9 +50,7 @@ class CSVSchemaLoader:
     def _read_csv(self, file_name: str) -> List[Dict[str, str]]:
         file_path = self.base_path / file_name
         if not file_path.exists():
-            print(f"Error: CSV file not found at {file_path}")
-            # In a real app, might raise FileNotFoundError or log more formally
-            return []
+            raise FileNotFoundError(f"Error: CSV file not found at {file_path}")
         
         records = []
         try:

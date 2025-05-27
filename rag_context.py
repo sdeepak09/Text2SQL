@@ -1,5 +1,5 @@
 import os # Added import
-from schema_parser import SchemaParser
+from csv_schema_loader import CSVSchemaLoader, TableInfo, ColumnInfo, JoinInfo
 # from schema_embedding_store import SchemaEmbeddingStore # Removed
 from query_retriever import QueryRetriever # Added import
 from typing import Dict, Any, List, Optional
@@ -11,10 +11,10 @@ logger = logging.getLogger(__name__) # Added for logging warnings
 class RAGContextProvider:
     """Provide relevant context for SQL generation using RAG approach with QueryRetriever."""
     
-    def __init__(self, ddl_file_path: str):
-        """Initialize with the path to the DDL file."""
-        self.schema_parser = SchemaParser(ddl_file_path)
-        self.full_schema = self.schema_parser.get_formatted_schema()
+    def __init__(self):
+        """Initialize with CSVSchemaLoader."""
+        self.csv_loader = CSVSchemaLoader(data_folder_path="data/")
+        self.full_schema = self._get_full_schema_from_csv()
 
         openai_api_key = os.getenv("OPENAI_API_KEY")
         if not openai_api_key:
@@ -39,7 +39,45 @@ class RAGContextProvider:
             # Depending on desired behavior, might want to make self.query_retriever None or re-raise
             # For now, if QueryRetriever fails, subsequent calls will likely fail.
             self.query_retriever = None # Ensure it's None if init fails badly
-    
+
+    def _get_full_schema_from_csv(self) -> str:
+        """Constructs the full schema string from CSVSchemaLoader."""
+        schema_parts = []
+        tables = self.csv_loader.get_tables()
+        if not tables:
+            logger.warning("No tables found by CSVSchemaLoader. Full schema will be empty.")
+            return "Database schema is empty or could not be loaded."
+
+        schema_parts.append("Database Schema:")
+        for table_info in tables:
+            schema_parts.append(f"\nTable: {table_info.name}")
+            if table_info.description:
+                schema_parts.append(f"  Description: {table_info.description}")
+            
+            columns = self.csv_loader.get_columns_for_table(table_info.name)
+            if columns:
+                schema_parts.append("  Columns:")
+                for col in columns:
+                    col_desc = f"    - {col.column_name} ({col.data_type})"
+                    if col.description:
+                        col_desc += f" # {col.description}"
+                    schema_parts.append(col_desc)
+            else:
+                schema_parts.append("  No columns defined for this table.")
+
+        relationships = self.csv_loader.get_foreign_keys()
+        if relationships:
+            schema_parts.append("\nRelationships:")
+            for rel in relationships:
+                schema_parts.append(
+                    f"  - {rel.primary_table_name}.{rel.primary_table_column} "
+                    f"-> {rel.foreign_table_name}.{rel.foreign_table_column}"
+                )
+        else:
+            schema_parts.append("\nNo relationships defined.")
+            
+        return "\n".join(schema_parts)
+
     def get_relevant_context(self, query: str) -> Dict[str, Any]:
         """Get relevant schema context based on the query using embeddings."""
         retrieved_docs = []
@@ -52,9 +90,9 @@ class RAGContextProvider:
         else:
             logger.warning("QueryRetriever not initialized. Cannot retrieve documents.")
             
-        relevant_schema = self.schema_parser.search_schema(query)
+        relevant_schema_data = self._search_csv_schema(query)
         
-        formatted_context = self._format_relevant_schema(relevant_schema)
+        formatted_context = self._format_relevant_schema(relevant_schema_data)
         # statement_context = self._format_relevant_statements(relevant_statements) # Old
         statement_context = self._format_retrieved_documents(retrieved_docs) # New
         
@@ -62,45 +100,106 @@ class RAGContextProvider:
             "relevant_schema": formatted_context, # This comes from _format_relevant_schema
             "relevant_statements": statement_context, # This now comes from _format_retrieved_documents
             "full_schema": self.full_schema,
-            "relevant_tables": list(relevant_schema["tables"].keys()),
+            "relevant_tables": list(relevant_schema_data["tables"].keys()) if relevant_schema_data and "tables" in relevant_schema_data else [],
             "query_terms": self._extract_query_terms(query)
         }
-    
-    def _format_relevant_schema(self, relevant_schema: Dict[str, Any]) -> str:
-        """Format the relevant schema for the LLM. (This method remains largely the same)"""
-        formatted = "Relevant Database Schema:\n\n"
-        
-        # Ensure relevant_schema["tables"] is a dictionary as expected
-        tables_data = relevant_schema.get("tables", {})
-        if not isinstance(tables_data, dict):
-            logger.warning(f"Expected 'tables' to be a dict in relevant_schema, got {type(tables_data)}. Returning minimal schema.")
-            return formatted # Or some default error string
 
+    def _search_csv_schema(self, query: str) -> Dict[str, Any]:
+        """Mimics search_schema using CSVSchemaLoader."""
+        query_terms = {term.lower() for term in re.findall(r'\b\w+\b', query)}
+        
+        relevant_tables_data = {}
+        all_identified_table_names = set()
+
+        # Iterate through all tables to find matches in table names or column names
+        for table_info in self.csv_loader.get_tables():
+            table_name_lower = table_info.name.lower()
+            table_added = False
+            
+            # Check if table name itself is in query terms
+            if table_name_lower in query_terms:
+                if table_info.name not in relevant_tables_data:
+                    relevant_tables_data[table_info.name] = []
+                    all_identified_table_names.add(table_info.name)
+                table_added = True
+
+            columns_for_table = self.csv_loader.get_columns_for_table(table_info.name)
+            for col_info in columns_for_table:
+                col_name_lower = col_info.column_name.lower()
+                # Check if column name is in query terms or if table was already added (to include all its columns)
+                if col_name_lower in query_terms or table_name_lower in query_terms:
+                    if table_info.name not in relevant_tables_data:
+                        relevant_tables_data[table_info.name] = []
+                        all_identified_table_names.add(table_info.name)
+                    
+                    # Avoid duplicating columns if table was added due to its name, then a column matched
+                    # This logic ensures columns are added once per table
+                    found_col = any(c['name'] == col_info.column_name for c in relevant_tables_data[table_info.name])
+                    if not found_col:
+                         relevant_tables_data[table_info.name].append({
+                            "name": col_info.column_name,
+                            "type": col_info.data_type,
+                            "description": col_info.description
+                        })
+
+        # Filter relationships based on identified tables
+        relevant_relationships = []
+        for join_info in self.csv_loader.get_foreign_keys():
+            if (join_info.primary_table_name in all_identified_table_names and \
+                join_info.foreign_table_name in all_identified_table_names):
+                relevant_relationships.append({
+                    "source_table": join_info.primary_table_name,
+                    "source_column": join_info.primary_table_column,
+                    "target_table": join_info.foreign_table_name,
+                    "target_column": join_info.foreign_table_column,
+                    "description": join_info.join_description 
+                })
+        
+        return {
+            "tables": relevant_tables_data,
+            "relationships": relevant_relationships
+        }
+
+    def _format_relevant_schema(self, relevant_schema_data: Dict[str, Any]) -> str:
+        """Format the relevant schema from CSVSchemaLoader for the LLM."""
+        formatted = "Relevant Database Schema:\n"
+        
+        tables_data = relevant_schema_data.get("tables", {})
+        if not tables_data: # Check if tables_data is empty
+            formatted += "-- No relevant tables found for the query.\n"
+        
         for table_name, columns in tables_data.items():
-            formatted += f"Table: {table_name}\n"
-            # Ensure columns is a list as expected
-            if isinstance(columns, list):
-                for column in columns:
-                    if isinstance(column, dict) and 'name' in column and 'type' in column:
-                         formatted += f"  - {column['name']} ({column['type']})\n"
-                    else:
-                        logger.warning(f"Skipping malformed column data for table {table_name}: {column}")
-            else:
-                logger.warning(f"Expected 'columns' to be a list for table {table_name}, got {type(columns)}")
-            formatted += "\n"
-        
-        relationships_data = relevant_schema.get("relationships", [])
-        if relationships_data: # Ensure it's a list and not empty
-            formatted += "Relationships:\n"
-            if isinstance(relationships_data, list):
-                for rel in relationships_data:
-                    if isinstance(rel, dict) and all(k in rel for k in ['source_table', 'source_column', 'target_table', 'target_column']):
-                        formatted += f"  - {rel['source_table']}.{rel['source_column']} -> {rel['target_table']}.{rel['target_column']}\n"
-                    else:
-                        logger.warning(f"Skipping malformed relationship data: {rel}")
-            else:
-                logger.warning(f"Expected 'relationships' to be a list, got {type(relationships_data)}")
+            formatted += f"\nTable: {table_name}\n"
+            table_info = self.csv_loader.get_table_by_name(table_name)
+            if table_info and table_info.description:
+                 formatted += f"  Description: {table_info.description}\n"
 
+            if columns:
+                formatted += "  Columns:\n"
+                for col_data in columns: # col_data is now a dict like {"name": ..., "type": ...}
+                    col_desc_str = f"    - {col_data['name']} ({col_data['type']})"
+                    # Include column description if available from _search_csv_schema
+                    if col_data.get('description'):
+                        col_desc_str += f" # {col_data['description']}"
+                    formatted += col_desc_str + "\n"
+            else:
+                formatted += "  No columns found or selected for this table.\n"
+            
+        relationships_data = relevant_schema_data.get("relationships", [])
+        if relationships_data:
+            formatted += "\nRelationships:\n"
+            for rel in relationships_data: # rel is already a dict
+                formatted += (
+                    f"  - {rel['source_table']}.{rel['source_column']} "
+                    f"-> {rel['target_table']}.{rel['target_column']}"
+                )
+                if rel.get('description'):
+                    formatted += f" # {rel['description']}"
+                formatted += "\n"
+        else:
+            if tables_data: # Only add this if there were tables but no relationships
+                 formatted += "\n-- No relevant relationships found for the selected tables.\n"
+        
         return formatted
     
     # def _format_relevant_statements(self, statements: List[Dict[str, Any]]) -> str: # Old
@@ -142,5 +241,21 @@ class RAGContextProvider:
         return terms
     
     def get_table_info(self) -> Dict[str, List[Dict[str, str]]]:
-        """Get information about all tables and their columns."""
-        return self.schema_parser.get_table_info() 
+        """Get information about all tables and their columns using CSVSchemaLoader."""
+        all_tables_info = {}
+        tables = self.csv_loader.get_tables()
+        if not tables:
+            logger.warning("No tables found by CSVSchemaLoader for get_table_info.")
+            return {}
+
+        for table_info in tables:
+            columns_data = []
+            columns = self.csv_loader.get_columns_for_table(table_info.name)
+            for col_info in columns:
+                columns_data.append({
+                    "name": col_info.column_name,
+                    "type": col_info.data_type
+                    # Optionally include description: col_info.description
+                })
+            all_tables_info[table_info.name] = columns_data
+        return all_tables_info
