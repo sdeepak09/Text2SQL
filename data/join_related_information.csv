@@ -1,0 +1,3 @@
+Source_Database,Primary_Table_Schema,Primary_Table_Name,Primary_Table_Column,Relationship_Type,Foreign_Table_Schema,Foreign_Table_Name,Foreign_Table_Column,Join_Description
+HealthcareDB,dbo,Patients,MEMBER,One-to-Many,dbo,ADMISSIONS,MEMBER,Links admissions records to the corresponding patient.
+HealthcareDB,dbo,Patients,MEMBER,One-to-Many,dbo,CLINMARK_T,MEMBER,Links clinical marker observations to the corresponding patient.

@@ -1,0 +1,62 @@
+Database_name,Table_name,column_name,SQL_FORMAT,Description (a very descriptive one),Valid_values,Connect_portal_only,corresponding_map_table
+HealthcareDB,Patients,MEMBER,varchar(50),Unique identifier assigned to each patient or member. Serves as the primary key for this table.,System-generated or assigned unique alphanumeric IDs,N/A,N/A
+HealthcareDB,Patients,FIRST_NAME,varchar(100),The legal first name of the patient.,Text,N/A,N/A
+HealthcareDB,Patients,LAST_NAME,varchar(100),The legal last name of the patient.,Text,N/A,N/A
+HealthcareDB,Patients,DOB,smalldatetime,The patient's official date of birth.,Valid dates,N/A,N/A
+HealthcareDB,Patients,GNDR,varchar(50),"The gender of the patient. (e.g., 'Male', 'Female', 'Other', 'Unknown' - specific codes may vary)","e.g., 'M', 'F', 'O', 'U', or full text",N/A,N/A
+HealthcareDB,Patients,ADDRESS_1,varchar(255),The primary street address line for the patient's residence.,Text,N/A,N/A
+HealthcareDB,Patients,CITY,varchar(100),The city where the patient resides.,Text,N/A,N/A
+HealthcareDB,Patients,STATE,varchar(50),The state or province where the patient resides.,"Text (e.g., state codes or full names)",N/A,N/A
+HealthcareDB,Patients,ZIP_CODE,varchar(20),The postal or ZIP code for the patient's address.,Text (alphanumeric postal codes),N/A,N/A
+HealthcareDB,ADMISSIONS,ADMISSION_ID,"int IDENTITY(1,1)",Auto-incrementing unique identifier for each admission record. Primary key for this table.,System-generated integers,N/A,N/A
+HealthcareDB,ADMISSIONS,MEMBER,varchar(50),"Unique member identifier, linking this admission record to a specific patient in the Patients table.",Existing MEMBER IDs from Patients table,N/A,Patients
+HealthcareDB,ADMISSIONS,CONFINEMENT_NBR,tinyint,A number used for tracking individual confinements or admissions for a patient.,Small integers,N/A,N/A
+HealthcareDB,ADMISSIONS,EPISODE_NBA,smallint,A number identifying a specific episode of care to which this admission belongs.,Integers,N/A,N/A
+HealthcareDB,ADMISSIONS,ETG,int,The 9-digit Episode Treatment Group (ETG) number assigned to this confinement for classification.,9-digit integers,N/A,N/A
+HealthcareDB,ADMISSIONS,ADMIT_DT,varchar(50),"The earliest 'From Date' of Room & Board revenue code service records associated with the ETG confinement. (Stored as text, represents a date)","Text formatted as a date (e.g., YYYY-MM-DD)",N/A,N/A
+HealthcareDB,ADMISSIONS,DISCHARGE_DT,varchar(50),"The most recent 'To Date' of Room & Board revenue code service records associated with the ETG confinement. (Stored as text, represents a date)","Text formatted as a date (e.g., YYYY-MM-DD)",N/A,N/A
+HealthcareDB,ADMISSIONS,LENGTH_OF_STAY,tinyint,"The length of the patient's stay for this confinement, typically calculated in days.",Small integers (number of days),N/A,N/A
+HealthcareDB,ADMISSIONS,EPISODE_TYPE,tinyint,"A code indicating the type of episode of care, based on relevant categorization or procedures.",Integer codes (specific definitions external),N/A,(Lookup table likely)
+HealthcareDB,ADMISSIONS,CONFINEMENT_TYPE,tinyint,"A code indicating the nature of the admission (e.g., emergency, planned, elective).",Integer codes (specific definitions external),N/A,(Lookup table likely)
+HealthcareDB,ADMISSIONS,PROV_ID,datetime2(7),Provider ID of the facility from the Room & Board revenue records. (Unusual data type for an ID),"Datetime values (likely an error in original DDL, usually varchar/int)",N/A,(Provider table likely)
+HealthcareDB,ADMISSIONS,RESPONSIBLE_PROV_ID,varchar(1),Identifier for the provider primarily responsible for the patient's care during this admission.,Single character or short code,N/A,(Provider table likely)
+HealthcareDB,ADMISSIONS,PATIENT_STS,nvarchar(1),"A code representing the patient's status during the confinement (e.g., 'A' for active, 'D' for discharged).","e.g., 'A', 'D'",N/A,(Lookup table likely)
+HealthcareDB,ADMISSIONS,GNDR,nvarchar(50),The gender of the patient as recorded for this admission.,"e.g., 'Male', 'Female', 'Other'",N/A,N/A
+HealthcareDB,ADMISSIONS,ADMSN_AGE,tinyint,The age of the patient at the time of this admission.,Small integers (age in years),N/A,N/A
+HealthcareDB,ADMISSIONS,DISCHARGE_AGE,tinyint,The age of the patient at the time of discharge from this admission.,Small integers (age in years),N/A,N/A
+HealthcareDB,ADMISSIONS,FACILITY_TYPE,tinyint,A code indicating the type of healthcare facility where the admission occurred.,Integer codes (specific definitions external),N/A,(Lookup table likely)
+HealthcareDB,ADMISSIONS,BED_TYPE,tinyint,A code indicating the type of bed assigned to the patient during this confinement.,Integer codes (specific definitions external),N/A,(Lookup table likely)
+HealthcareDB,ADMISSIONS,PROC_CD,nvarchar(1),A code for any specific primary procedure performed during this confinement.,Single character or short code,N/A,(Procedure code table)
+HealthcareDB,ADMISSIONS,ICD_DIAG_CD,nvarchar(50),The primary ICD (International Classification of Diseases) diagnosis code from the most recent Room & Board service record for this confinement.,"Valid ICD codes (e.g., ICD-10 format)",N/A,(Diagnosis code table)
+HealthcareDB,ADMISSIONS,ICD_PROC_CD,nvarchar(1),An ICD procedure code for any specific procedures performed during this confinement.,Single character or short code,N/A,(Procedure code table)
+HealthcareDB,ADMISSIONS,ICD_TYPE,tinyint,"A code indicating the version of the ICD code set used (e.g., 9 for ICD-9, 10 for ICD-10).","e.g., 9, 10",N/A,N/A
+HealthcareDB,ADMISSIONS,TOTAL_ALLOWED,float,The total allowed monetary amount for all services and charges within this confinement.,Numeric (currency),N/A,N/A
+HealthcareDB,ADMISSIONS,TOTAL_PAID,float,The total monetary amount paid for all services and charges within this confinement.,Numeric (currency),N/A,N/A
+HealthcareDB,ADMISSIONS,FACILITY_ALLOWED,float,The allowed monetary amount specifically for facility charges within this confinement.,Numeric (currency),N/A,N/A
+HealthcareDB,ADMISSIONS,FACILITY_PAID,float,The paid monetary amount specifically for facility charges within this confinement.,Numeric (currency),N/A,N/A
+HealthcareDB,ADMISSIONS,ROOM_BOARD_ALLOWED,float,The allowed monetary amount for room and board charges during this confinement.,Numeric (currency),N/A,N/A
+HealthcareDB,ADMISSIONS,ROOM_BOARD_PAID,float,The paid monetary amount for room and board charges during this confinement.,Numeric (currency),N/A,N/A
+HealthcareDB,ADMISSIONS,ANCILLARY_INPATIENT_ALLOWED,float,The allowed monetary amount for ancillary inpatient services during this confinement.,Numeric (currency),N/A,N/A
+HealthcareDB,ADMISSIONS,ANCILLARY_INPATIENT_PAID,float,The paid monetary amount for ancillary inpatient services during this confinement.,Numeric (currency),N/A,N/A
+HealthcareDB,ADMISSIONS,CLINICIAN_ALLOWED,float,The allowed monetary amount for services provided by clinicians during this confinement.,Numeric (currency),N/A,N/A
+HealthcareDB,ADMISSIONS,CLINICIAN_PAID,float,The paid monetary amount for services provided by clinicians during this confinement.,Numeric (currency),N/A,N/A
+HealthcareDB,ADMISSIONS,OTH_ALLOWED,float,Other allowed monetary amounts during this confinement not covered by specific categories.,Numeric (currency),N/A,N/A
+HealthcareDB,ADMISSIONS,OTH_PAID,float,Other paid monetary amounts during this confinement not covered by specific categories.,Numeric (currency),N/A,N/A
+HealthcareDB,ADMISSIONS,EPISODE_ALLOWED,float,The total allowed monetary amount for the entire episode of care to which this confinement belongs.,Numeric (currency),N/A,N/A
+HealthcareDB,ADMISSIONS,EPISODE_PAID,float,The total paid monetary amount for the entire episode of care to which this confinement belongs.,Numeric (currency),N/A,N/A
+HealthcareDB,ADMISSIONS,NON_EPISODE_ALLOWED,float,Allowed monetary amounts for services or charges that fall outside of the defined episode context.,Numeric (currency),N/A,N/A
+HealthcareDB,ADMISSIONS,NON_EPISODE_PAID,float,Paid monetary amounts for services or charges that fall outside of the defined episode context.,Numeric (currency),N/A,N/A
+HealthcareDB,ADMISSIONS,SUSPECT_CONFINEMENT,tinyint,A flag (0 or 1) indicating if this confinement is considered suspect due to reasons like overlapping facility claims.,"0 (Not Suspect), 1 (Suspect)",N/A,N/A
+HealthcareDB,ADMISSIONS,CONFINEMENT_CLASSIFICATION,tinyint,A code used for classifying this confinement for reporting or analytical purposes.,Integer codes (specific definitions external),N/A,(Lookup table likely)
+HealthcareDB,ADMISSIONS,RESERVED,nvarchar(1),A field reserved for future use or to store additional miscellaneous information.,Text (single character),N/A,N/A
+HealthcareDB,CLINMARK_T,MEMBER,varchar(32),"Unique member identifier, linking this clinical marker record to a specific patient.",Existing MEMBER IDs from Patients table,N/A,Patients
+HealthcareDB,CLINMARK_T,RULEID,int,A unique numeric identifier for the specific clinical indicator or rule being tracked.,Integers,N/A,(Rule definition table)
+HealthcareDB,CLINMARK_T,IA_TIME,tinyint,A numeric identifier for the time period of the observation. The earliest period is IA_TIME = 1.,Integers >= 1,N/A,N/A
+HealthcareDB,CLINMARK_T,MIN_DT,smalldatetime,The date of the first occurrence of this clinical indicator for this member within the IA_TIME period.,Valid dates,N/A,N/A
+HealthcareDB,CLINMARK_T,MAX_DT,smalldatetime,The date of the last occurrence of this clinical indicator for this member within the IA_TIME period.,Valid dates,N/A,N/A
+HealthcareDB,CLINMARK_T,OCCURRENCES,smallint,The number of services or unique days that were observed for this member and clinical indicator during the IA_TIME period.,Integers,N/A,N/A
+HealthcareDB,CASD,CASE_ID,int,A unique numeric identifier for the case or classification record. Primary key for this table.,Integers,N/A,N/A
+HealthcareDB,CASD,SHORTDESC,varchar(120),A concise description or name for the case or classification.,Text,N/A,N/A
+HealthcareDB,CASD,LONGDESC,varchar(1000),"A more detailed, longer description providing further context about the case or classification.",Text,N/A,N/A
+HealthcareDB,CASD,CAT_ID,int,A numeric identifier for the category to which this case or classification belongs.,Integers,N/A,(Category table likely)
+HealthcareDB,CASD,CAT_DESC,varchar(120),A textual description of the category identified by CAT_ID.,Text,N/A,N/A
