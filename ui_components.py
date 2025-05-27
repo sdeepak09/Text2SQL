@@ -15,14 +15,13 @@ def display_schema_sidebar(table_info):
         st.divider()
         st.subheader("Example Questions")
         st.markdown("""
-        - How many providers are in each specialty?
-        - What is the average rating for each provider specialty?
-        - Which specialty has the highest number of providers?
-        - List all providers with a rating above 4.5
-        - Show total appointments by provider in the last month
-        - Which patient has the most appointments?
-        - How many appointments were scheduled for each day last week?
-        - What's the average appointment duration by specialty?
+        - Show all admission records where the total allowed amount is greater than 500.
+        - List the first name and last name of patients for admissions with an ID less than 10.
+        - What are the procedure codes (PROC_CD, ICD_PROC_CD) for admission ID 75?
+        - Show responsible provider IDs and a count of admissions for each.
+        - List admission IDs and their admit dates for admissions after January 1, 2023.
+        - Which patient (MEMBER ID) has the most entries in the clinical markers table (CLINMARK_T)?
+        - What are the distinct categories (CAT_DESC) available in the case data (CASD)?
         """)
 
 def display_chat_messages(messages):

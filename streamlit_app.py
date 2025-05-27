@@ -177,12 +177,13 @@ st.markdown("""
 
 <h2>Example questions to try:</h2>
 <ul>
-<li>How many providers are in each specialty?</li>
-<li>What is the average rating for each provider specialty?</li>
-<li>Which specialty has the highest number of providers?</li>
-<li>List all providers with a rating above 4.5</li>
-<li>Show total appointments by provider in the last month</li>
-<li>Which patient has the most appointments?</li>
+<li>Show all admission records where the total allowed amount is greater than 500.</li>
+<li>List the first name and last name of patients for admissions with an ID less than 10.</li>
+<li>What are the procedure codes (PROC_CD, ICD_PROC_CD) for admission ID 75?</li>
+<li>Show responsible provider IDs and a count of admissions for each.</li>
+<li>List admission IDs and their admit dates for admissions after January 1, 2023.</li>
+<li>Which patient (MEMBER ID) has the most entries in the clinical markers table (CLINMARK_T)?</li>
+<li>What are the distinct categories (CAT_DESC) available in the case data (CASD)?</li>
 </ul>
 </div>
 </details>
