@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import re
 
 def display_schema_sidebar(table_info):
     """Display example questions in the sidebar."""
@@ -27,12 +28,61 @@ def display_schema_sidebar(table_info):
 def display_chat_messages(messages):
     """Display chat messages with avatars and styling."""
     for message in messages:
-        # Set avatars based on role
         avatar = "👤" if message["role"] == "user" else "🤖"
-        
-        # Display the message with the appropriate avatar
         with st.chat_message(message["role"], avatar=avatar):
-            st.markdown(message["content"])
+            if message["role"] == "assistant" and message.get("type") == "query_understanding":
+                # Display new structured explanation
+                if message.get("summary"):
+                    st.markdown("**I understand your query as follows:**") # Main section header
+                    st.markdown(message["summary"])
+                    st.markdown("---") # Add a separator
+                if message.get("breakdown"):
+                    st.markdown("**Here's my plan to answer it:**") # Main section header
+                    # Format the breakdown, assuming it might be a multi-line string or list of steps
+                    if isinstance(message["breakdown"], list):
+                        for i, step in enumerate(message["breakdown"]):
+                            st.markdown(f"{i+1}. {step}")
+                    else: # message["breakdown"] is a string
+                        breakdown_text = message["breakdown"]
+                        # Replace " 2." with "
+                        # 2.", " 3." with "
+                        # 3." etc.
+                        # This aims to make "1. Step one. 2. Step two." display as:
+                        # 1. Step one.
+                        # 2. Step two.
+                        # by ensuring each numbered item starts on a new line for markdown.
+                        formatted_breakdown = breakdown_text
+                        # Iterating from higher numbers to lower (e.g., 10 down to 2)
+                        # to avoid issues where replacing " 2." might affect a " 12."
+                        for i in range(10, 1, -1): # Numbers 10 down to 2
+                            formatted_breakdown = formatted_breakdown.replace(f' {i}.', f'\n{i}.')
+                        # For "1.", if it's not already at the beginning of a line (e.g. after a header)
+                        # we don't necessarily need to add a newline before it,
+                        # but if the whole string is "Summary text 1. first step" it might be needed.
+                        # However, the current prompt structure implies "step_by_step_breakdown_llm" will *be* the list.
+                        # This formatting is a fallback if the LLM doesn't use actual newlines in its string.
+                        st.markdown(formatted_breakdown)
+                
+                # Optional: For debugging, display the raw structured explanation if show_debug is active
+                # This requires access to st.session_state, which might be better handled in streamlit_app.py
+                # For now, we'll omit this part from the direct subtask to keep it focused on ui_components.py
+                # if st.session_state.get("show_debug") and message.get("structured_explanation_raw"):
+                #    with st.expander("View Detailed Structured Explanation (Debug)"):
+                #        st.json(message["structured_explanation_raw"])
+
+            elif message["role"] == "assistant" and message.get("type") == "simple_explanation":
+                # Handle the old simple explanation or fallbacks
+                st.markdown(message["content"])
+            elif message["role"] == "user":
+                # Display user messages as before
+                st.markdown(message["content"])
+            else:
+                # Default display for any other assistant messages (e.g., SQL query, results)
+                # or messages that don't have the new 'type' field yet from older history.
+                if "content" in message: # Check if content key exists
+                    st.markdown(message["content"])
+                # else:
+                #    st.markdown("(Unsupported assistant message structure)") # Optional: for debugging
 
 def display_query_results(graph_state):
     """Display query results from the graph state."""

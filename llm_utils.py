@@ -41,16 +41,24 @@ You are an expert in SQL and database schema analysis. Your task is to analyze a
 User Query: {query}
 
 Analyze the query and provide a structured explanation in JSON format with the following fields:
-- identified_intent: A brief description of what the user is asking for
-- target_tables: An array of table names that are relevant to the query
-- target_columns: An array of column names that should be included in the result
-- filter_conditions: Any conditions that should be applied (or null if none)
-- join_conditions: Any joins that need to be performed (or null if none)
-- group_by: Any grouping that should be applied (or null if none)
-- order_by: Any ordering that should be applied (or null if none)
-- limit: Any limit on the number of results (or null if none)
-- summary_of_understanding: A concise explanation of how you understand the query
+- query_summary_llm: A user-facing natural language summary of what the query is asking for.
+- step_by_step_breakdown_llm: A user-facing natural language step-by-step plan of how you will approach generating the SQL query.
+- identified_intent: A brief description of what the user is asking for (e.g., 'retrieve data', 'aggregate data').
+- target_tables: An array of table names that are relevant to the query.
+- target_columns: An array of column names that should be included in the result or used in calculations.
+- filter_conditions: List of filter objects (e.g., `[{"column": "age", "operator": ">", "value": 30}]`) or an empty list `[]` if no filters apply.
+- join_conditions: List of join objects (e.g., `[{"table1": "Orders", "column1": "CustomerID", "table2": "Customers", "column2": "ID"}]`) or an empty list `[]` if no joins.
+- group_by: List of column names to group by (e.g., `["department"]`), or an empty list `[]` if no grouping.
+- order_by: An order_by object (e.g., `{"column": "name", "direction": "ASC"}`) or `null` if no ordering is needed.
+- limit: An integer specifying the number of results (e.g., `10`) or `null` if no limit.
+- summary_of_understanding: A concise technical summary of your understanding, focusing on how the query maps to schema elements.
 
+Return your response **only in the specified JSON format**. Ensure the JSON is well-formed.
+Example for the new fields:
+  "query_summary_llm": "You want to find all employees in the 'Sales' department who were hired after January 1, 2022, and list their names and hire dates.",
+  "step_by_step_breakdown_llm": "1. I will select the employee's name and hire date. 2. I will look at the 'Employees' table. 3. I will filter for employees in the 'Sales' department. 4. I will further filter for employees hired after 2022-01-01. 5. The results will be presented as requested.",
+
+Make sure to include these new fields along with the existing ones in your JSON response.
 Return your response in this JSON format:
 """
     return PromptTemplate(

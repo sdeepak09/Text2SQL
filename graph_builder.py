@@ -94,11 +94,36 @@ def explain_query_node(state: GraphState) -> GraphState:
             state["query_explanation"] = explanation_dict
             
             # Add the explanation to the conversation history
-            explanation_text = explanation.summary_of_understanding if hasattr(explanation, 'summary_of_understanding') else explanation_dict.get('explanation', f"I'll analyze your question about: '{query}'")
-            state["conversation_history"].append({
-                "role": "assistant",
-                "content": f"I understand your query as follows:\n\n{explanation_text}"
-            })
+            # Access new fields from the explanation_dict (which should have them from the Pydantic model)
+            query_summary = explanation_dict.get("query_summary_llm")
+            step_by_step_breakdown = explanation_dict.get("step_by_step_breakdown_llm")
+
+            if query_summary and step_by_step_breakdown:
+                state["conversation_history"].append({
+                    "role": "assistant",
+                    "type": "query_understanding",  # Custom type for Streamlit to identify
+                    "summary": query_summary,
+                    "breakdown": step_by_step_breakdown,
+                    "structured_explanation_raw": explanation_dict # Optional: pass the full JSON if needed by UI
+                })
+            elif explanation_dict.get("summary_of_understanding"): # Fallback to existing field if new ones aren't populated
+                explanation_text = explanation_dict["summary_of_understanding"]
+                state["conversation_history"].append({
+                    "role": "assistant",
+                    "type": "simple_explanation",
+                    "content": f"I understand your query as follows:\n\n{explanation_text}"
+                })
+            else: # Further fallback
+                fallback_text = f"I'll try to answer your question about: '{state['current_query']}'"
+                # If explanation_dict itself is the fallback from an error, it might not have summary_of_understanding
+                if "explanation" in explanation_dict and isinstance(explanation_dict["explanation"], str): # Check if it's the minimal fallback
+                     fallback_text = explanation_dict["explanation"]
+
+                state["conversation_history"].append({
+                    "role": "assistant",
+                    "type": "simple_explanation",
+                    "content": fallback_text
+                })
         
     except Exception as e:
         logger.error(f"Error in explain_query_node: {str(e)}")

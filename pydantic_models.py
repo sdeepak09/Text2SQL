@@ -24,12 +24,22 @@ class QueryExplanation(BaseModel):
     identified_intent: str = Field(description="The main intent of the query (e.g., 'retrieve', 'aggregate', 'filter')")
     target_tables: List[str] = Field(description="List of tables that need to be queried")
     target_columns: List[str] = Field(description="List of columns that need to be retrieved or used in calculations")
-    filter_conditions: Optional[List[FilterCondition]] = Field(default_factory=list, description="List of filter conditions to apply")
+    filter_conditions: Optional[Union[List[FilterCondition], str]] = Field(default=None, description="List of filter conditions to apply or a string representation.")
     join_conditions: Optional[List[JoinCondition]] = Field(default_factory=list, description="List of join conditions if multiple tables are involved")
     group_by: Optional[List[str]] = Field(default_factory=list, description="List of columns to group by, if any")
-    order_by: Optional[OrderBy] = None
-    limit: Optional[int] = None
+    order_by: Optional[Union[OrderBy, List[Any]]] = Field(default=None, description="Ordering clause or an empty list.")
+    limit: Optional[Union[int, str]] = Field(default=None, description="Limit on the number of results, can be int or string like 'Not specified'.")
     summary_of_understanding: str = Field(description="A human-readable summary of the query understanding")
+
+    # New fields:
+    query_summary_llm: Optional[str] = Field(default=None, description="LLM's natural language summary of the user query.")
+    step_by_step_breakdown_llm: Optional[str] = Field(default=None, description="LLM's step-by-step breakdown of its plan to generate SQL.")
+
+    @validator('order_by', pre=True, always=True)
+    def empty_list_to_none_for_order_by(cls, v):
+        if isinstance(v, list) and not v:
+            return None
+        return v
 
     @validator('target_tables')
     def validate_tables(cls, v):
