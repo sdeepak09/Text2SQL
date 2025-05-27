@@ -12,7 +12,7 @@ os.makedirs('data', exist_ok=True)
 DB_PATH = 'data/company.db'
 
 # Initialize the RAG context provider
-rag_provider = RAGContextProvider("data/database_schema.sql")
+rag_provider = RAGContextProvider()
 
 def initialize_database():
     """Initialize the database (not needed with RAG approach)."""
