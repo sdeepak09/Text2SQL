@@ -1,38 +1,47 @@
 """
-This script generates descriptions for tables and columns from a DDL file.
+This script generates descriptions for tables and columns using CSVSchemaLoader.
 """
 
-from schema_parser import SchemaParser
+from csv_schema_loader import CSVSchemaLoader # Updated import
+# TableInfo and ColumnInfo might be useful for type hinting if used directly
+# from csv_schema_loader import TableInfo, ColumnInfo 
 
 class SchemaDescriptionGenerator:
     """
-    Generates descriptions for tables and columns from a DDL file.
+    Generates descriptions for tables and columns using CSVSchemaLoader.
     """
-    def __init__(self, ddl_file_path: str):
+    def __init__(self, ddl_file_path: str = None, data_folder_path: str = "data/"): # ddl_file_path made optional
         """
-        Initializes the SchemaDescriptionGenerator with a DDL file path.
-
-        Args:
-            ddl_file_path: The path to the DDL file.
+        Initializes the SchemaDescriptionGenerator.
+        ddl_file_path is now optional and not directly used if CSVSchemaLoader is self-contained.
+        data_folder_path points to the directory containing CSV schema files.
         """
-        self.schema_parser = SchemaParser(ddl_file_path)
+        # self.schema_parser = SchemaParser(ddl_file_path) # Removed
+        self.csv_loader = CSVSchemaLoader(data_folder_path=data_folder_path)
 
     def get_table_descriptions(self) -> list[dict]:
         """
-        Generates descriptions for each table in the schema.
-
-        Returns:
-            A list of dictionaries, where each dictionary represents a table
-            description.
+        Generates descriptions for each table using data from CSVSchemaLoader.
         """
         table_descriptions = []
-        for table_name, table_data in self.schema_parser.tables.items():
-            columns_str = ", ".join([
-                f"{col['name']} ({col['type']})" for col in table_data['columns']
+        for table_info in self.csv_loader.get_tables():
+            table_name = table_info.name
+            
+            columns_for_this_table = self.csv_loader.get_columns_for_table(table_name)
+            cols_str = ", ".join([
+                f"{col.column_name} ({col.data_type})" for col in columns_for_this_table
             ])
-            description_string = (
-                f"Table '{table_name}' contains columns: {columns_str}"
-            )
+            
+            # Construct description string, incorporating details from TableInfo
+            description_string = f"Table '{table_name}'"
+            if table_info.category:
+                description_string += f" (Category: {table_info.category})"
+            if table_info.description:
+                description_string += f" has description: '{table_info.description}'."
+            else:
+                description_string += "." # End sentence if no specific description
+            description_string += f" It contains columns: {cols_str}"
+
             table_descriptions.append({
                 'type': 'table',
                 'table_name': table_name,
@@ -42,27 +51,29 @@ class SchemaDescriptionGenerator:
 
     def get_column_descriptions(self) -> list[dict]:
         """
-        Generates descriptions for each column in each table of the schema.
-
-        Returns:
-            A list of dictionaries, where each dictionary represents a column
-            description.
+        Generates descriptions for each column using data from CSVSchemaLoader.
         """
         column_descriptions = []
-        for table_name, table_data in self.schema_parser.tables.items():
-            for column in table_data['columns']:
-                column_name = column['name']
-                # Basic description, can be improved later
-                description_string = (
-                    f"Column '{column_name}' in table '{table_name}' "
-                    f"represents the {column_name.lower()} of the {table_name}."
-                )
-                column_descriptions.append({
-                    'type': 'column',
-                    'table_name': table_name,
-                    'column_name': column_name,
-                    'content': description_string
-                })
+        for col_info in self.csv_loader.get_all_columns():
+            description_string = (
+                f"Column '{col_info.column_name}' in table '{col_info.table_name}' "
+                f"(Type: {col_info.data_type})"
+            )
+            if col_info.description:
+                description_string += f" has description: '{col_info.description}'."
+            else:
+                description_string += "." # End sentence
+
+            # Optionally add other info like valid_values if present
+            if col_info.valid_values:
+                description_string += f" Valid values include: '{col_info.valid_values}'."
+            
+            column_descriptions.append({
+                'type': 'column',
+                'table_name': col_info.table_name,
+                'column_name': col_info.column_name,
+                'content': description_string
+            })
         return column_descriptions
 
     def get_all_descriptions(self) -> list[dict]:
@@ -79,11 +90,9 @@ class SchemaDescriptionGenerator:
 
 if __name__ == '__main__':
     try:
-        # Assuming 'data/database_schema.sql' exists for demonstration
-        # In a real scenario, ensure this path is correct and the file exists.
-        # For the purpose of this task, we'll assume SchemaParser handles
-        # FileNotFoundError if the file is missing.
-        generator = SchemaDescriptionGenerator('data/database_schema.sql')
+        # CSVSchemaLoader will print errors if CSV files are not found in "data/"
+        # No ddl_file_path is strictly needed for instantiation if data_folder_path is fixed
+        generator = SchemaDescriptionGenerator() 
         all_descriptions = generator.get_all_descriptions()
 
         table_desc_count = 0

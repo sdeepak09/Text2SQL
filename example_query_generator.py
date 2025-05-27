@@ -1,57 +1,65 @@
 """
-This script generates example SQL queries based on a DDL schema.
+This script generates example SQL queries based on schema information from CSV files.
 """
 import json
 import random
-from schema_parser import SchemaParser
+# from schema_parser import SchemaParser # Removed
+from csv_schema_loader import CSVSchemaLoader, TableInfo, ColumnInfo, JoinInfo # Added
 
 class ExampleQueryGenerator:
     """
-    Generates example SQL queries from a DDL file.
+    Generates example SQL queries using schema data from CSVSchemaLoader.
     """
-    def __init__(self, ddl_file_path: str):
+    def __init__(self, ddl_file_path: str = None, data_folder_path: str = "data/"): # ddl_file_path made optional
         """
-        Initializes the ExampleQueryGenerator with a DDL file path.
-
-        Args:
-            ddl_file_path: The path to the DDL file.
+        Initializes the ExampleQueryGenerator.
+        ddl_file_path is now optional and not directly used.
+        data_folder_path points to the directory containing CSV schema files.
         """
-        self.schema_parser = SchemaParser(ddl_file_path)
-        if not self.schema_parser.tables:
-            # Handle case where schema parsing might have failed or yielded no tables
-            print("Warning: SchemaParser found no tables. Query generation will be limited.")
+        # self.schema_parser = SchemaParser(ddl_file_path) # Removed
+        self.csv_loader = CSVSchemaLoader(data_folder_path=data_folder_path) # Added
+        if not self.csv_loader.get_tables(): # Updated check
+            print("Warning: CSVSchemaLoader found no tables. Query generation will be limited.")
 
 
     def _get_columns_by_type(self, table_name: str, col_type_check: callable) -> list[str]:
         """Helper to get column names of a specific type from a table."""
-        if table_name not in self.schema_parser.tables:
+        table_info = self.csv_loader.get_table_by_name(table_name)
+        if not table_info:
             return []
+        
+        columns_for_table = self.csv_loader.get_columns_for_table(table_name)
         cols = []
-        for col in self.schema_parser.tables[table_name]['columns']:
-            if col_type_check(col['type'].lower()):
-                cols.append(col['name'])
+        for col in columns_for_table: # Iterate through ColumnInfo objects
+            if col_type_check(col.data_type.lower()): # Use col.data_type
+                cols.append(col.column_name) # Use col.column_name
         return cols
 
     def _get_text_columns(self, table_name: str) -> list[str]:
         return self._get_columns_by_type(table_name, lambda t: any(s in t for s in ['char', 'text', 'varchar']))
 
     def _get_numeric_columns(self, table_name: str) -> list[str]:
-        return self._get_columns_by_type(table_name, lambda t: any(s in t for s in ['int', 'num', 'dec', 'float', 'double', 'money', 'real']))
+        return self._get_columns_by_type(table_name, lambda t: any(s in t for s in ['int', 'num', 'dec', 'float', 'double', 'money', 'real', 'decimal'])) # Added decimal
 
     def _get_date_columns(self, table_name: str) -> list[str]:
-        return self._get_columns_by_type(table_name, lambda t: any(s in t for s in ['date', 'time']))
+        return self._get_columns_by_type(table_name, lambda t: any(s in t for s in ['date', 'time', 'smalldatetime', 'datetime2'])) # Added smalldatetime, datetime2
 
     def _get_random_table(self) -> str | None:
         """Selects a random table name from the schema."""
-        table_names = list(self.schema_parser.tables.keys())
+        all_tables = self.csv_loader.get_tables()
+        if not all_tables:
+            return None
+        table_names = [table.name for table in all_tables] # Get names from TableInfo objects
         return random.choice(table_names) if table_names else None
     
     def _get_random_columns(self, table_name: str, count: int = 2) -> list[str]:
         """Selects random columns from a table."""
-        if table_name not in self.schema_parser.tables:
+        table_info = self.csv_loader.get_table_by_name(table_name)
+        if not table_info:
             return []
         
-        available_columns = [col['name'] for col in self.schema_parser.tables[table_name]['columns']]
+        columns_for_table = self.csv_loader.get_columns_for_table(table_name)
+        available_columns = [col.column_name for col in columns_for_table] # Get names from ColumnInfo
         if not available_columns:
             return []
         
@@ -63,10 +71,11 @@ class ExampleQueryGenerator:
         Generates a list of diverse SQL query strings.
         """
         queries = []
-        if not self.schema_parser.tables:
+        all_tables_info = self.csv_loader.get_tables()
+        if not all_tables_info: # Updated check
             return ["-- No tables found in schema to generate queries."]
 
-        table_names = list(self.schema_parser.tables.keys())
+        table_names = [table.name for table in all_tables_info] # Updated access
         if not table_names:
             return ["-- No tables available for query generation."]
 
@@ -96,17 +105,19 @@ class ExampleQueryGenerator:
                 queries.append(f"SELECT {col_str} FROM {table} WHERE {num_col} > 100 ORDER BY {date_col} DESC LIMIT 10;")
         
         # 2. JOIN statements
+        foreign_keys = self.csv_loader.get_foreign_keys() # Use JoinInfo
         for _ in range(num_queries_per_type):
-            if not self.schema_parser.relationships: continue
+            if not foreign_keys: continue
             
-            relationship = random.choice(self.schema_parser.relationships)
-            from_table = relationship['source_table'] # Key corrected
-            to_table = relationship['target_table']   # Key corrected
-            from_col = relationship['source_column'] # Key corrected
-            to_col = relationship['target_column']   # Key corrected
+            join_info = random.choice(foreign_keys) # This is a JoinInfo object
+            from_table = join_info.primary_table_name
+            to_table = join_info.foreign_table_name
+            from_col = join_info.primary_table_column
+            to_col = join_info.foreign_table_column
 
             # Ensure tables exist before trying to get columns
-            if from_table not in self.schema_parser.tables or to_table not in self.schema_parser.tables:
+            # Check against the list of table names we derived earlier
+            if from_table not in table_names or to_table not in table_names:
                 continue
 
             t1_cols = self._get_random_columns(from_table, 1)
@@ -115,8 +126,8 @@ class ExampleQueryGenerator:
             if t1_cols and t2_cols:
                 queries.append(
                     f"SELECT T1.{t1_cols[0]}, T2.{t2_cols[0]} "
-                    f"FROM {from_table} T1 "
-                    f"JOIN {to_table} T2 ON T1.{from_col} = T2.{to_col} "
+                    f"FROM {from_table} AS T1 " # Added AS for alias
+                    f"JOIN {to_table} AS T2 ON T1.{from_col} = T2.{to_col} "
                     f"LIMIT 10;"
                 )
 
@@ -129,8 +140,8 @@ class ExampleQueryGenerator:
             queries.append(f"SELECT COUNT(*) FROM {table};")
             
             numeric_cols = self._get_numeric_columns(table)
-            # Use any column for grouping, preferably not the numeric one being aggregated
-            all_cols = [col['name'] for col in self.schema_parser.tables[table]['columns']]
+            columns_for_table = self.csv_loader.get_columns_for_table(table)
+            all_cols = [col.column_name for col in columns_for_table] # Use ColumnInfo
             
             if numeric_cols:
                 num_col = random.choice(numeric_cols)
@@ -149,30 +160,27 @@ class ExampleQueryGenerator:
                     queries.append(f"SELECT {group_col}, AVG({num_col}) FROM {table} GROUP BY {group_col};")
 
         # 4. Queries with multiple JOINs (basic attempt)
-        # This is a simplified version. True multi-join requires graph traversal of relationships.
-        if len(self.schema_parser.relationships) >= 2 and num_queries_per_type > 0:
-            for _ in range(min(num_queries_per_type, len(self.schema_parser.relationships) -1 )): # Limit attempts
-                # Pick two distinct relationships
-                if len(self.schema_parser.relationships) < 2: break
-                rel1, rel2 = random.sample(self.schema_parser.relationships, 2)
+        if len(foreign_keys) >= 2 and num_queries_per_type > 0:
+            for _ in range(min(num_queries_per_type, len(foreign_keys) - 1)): # Limit attempts
+                if len(foreign_keys) < 2: break
+                rel1, rel2 = random.sample(foreign_keys, 2) # These are JoinInfo objects
 
                 # Try to chain them: T1 -> T2 -> T3
                 # If rel1: T1.col1 -> T2.col2  AND rel2: T2.col3 -> T3.col4
-                # Corrected keys for rel1 and rel2
-                if rel1['target_table'] == rel2['source_table'] and \
-                   rel1['source_table'] != rel2['target_table']: # Avoid self-joins for simplicity here
+                if rel1.foreign_table_name == rel2.primary_table_name and \
+                   rel1.primary_table_name != rel2.foreign_table_name: # Avoid self-joins for simplicity here
                     
-                    t1 = rel1['source_table']
-                    t2 = rel1['target_table'] # Same as rel2['source_table']
-                    t3 = rel2['target_table']
+                    t1 = rel1.primary_table_name
+                    t2 = rel1.foreign_table_name # Same as rel2.primary_table_name
+                    t3 = rel2.foreign_table_name
 
-                    t1_pk = rel1['source_column']
-                    t2_fk_for_t1 = rel1['target_column']
-                    t2_pk_for_t3 = rel2['source_column']
-                    t3_fk = rel2['target_column']
+                    t1_pk = rel1.primary_table_column
+                    t2_fk_for_t1 = rel1.foreign_table_column
+                    t2_pk_for_t3 = rel2.primary_table_column
+                    t3_fk = rel2.foreign_table_column
                     
-                    # Ensure tables exist
-                    if not all(tbl in self.schema_parser.tables for tbl in [t1, t2, t3]):
+                    # Ensure tables exist (check against derived table_names list)
+                    if not all(tbl in table_names for tbl in [t1, t2, t3]):
                         continue
 
                     t1_sel_col = self._get_random_columns(t1, 1)
@@ -181,9 +189,9 @@ class ExampleQueryGenerator:
                     if t1_sel_col and t3_sel_col:
                         queries.append(
                             f"SELECT T1.{t1_sel_col[0]}, T3.{t3_sel_col[0]} "
-                            f"FROM {t1} T1 "
-                            f"JOIN {t2} T2 ON T1.{t1_pk} = T2.{t2_fk_for_t1} "
-                            f"JOIN {t3} T3 ON T2.{t2_pk_for_t3} = T3.{t3_fk} "
+                            f"FROM {t1} AS T1 " # Added AS for alias
+                            f"JOIN {t2} AS T2 ON T1.{t1_pk} = T2.{t2_fk_for_t1} "
+                            f"JOIN {t3} AS T3 ON T2.{t2_pk_for_t3} = T3.{t3_fk} "
                             f"LIMIT 10;"
                         )
         
@@ -193,7 +201,7 @@ class ExampleQueryGenerator:
         return unique_queries
 
 
-    def save_queries_to_file(self, queries: list[str], output_filepath: str = "data/example_queries.jsonl"):
+    def save_queries_to_file(self, queries: list[str], output_filepath: str = "data/example_queries.jsonl"): # Path might need adjustment if data/ is not CWD
         """
         Saves the list of query strings to the specified file in JSONL format.
         """
@@ -206,53 +214,53 @@ class ExampleQueryGenerator:
                 f.write('\n')
 
 if __name__ == '__main__':
-    # Create a dummy DDL file for demonstration if it doesn't exist
-    # This is just to make the example runnable without manual file creation.
-    # In a real scenario, 'data/database_schema.sql' should be provided.
+    # CSVSchemaLoader expects CSV files in "data/" relative to its data_folder_path.
+    # No dummy DDL creation is needed here.
+    # ExampleQueryGenerator now defaults to data_folder_path="data/"
+    
+    # For robust execution if script is not in project root:
+    # import pathlib
+    # script_dir = pathlib.Path(__file__).parent
+    # data_path = script_dir / "data" # Assuming data is relative to script
+    # generator = ExampleQueryGenerator(data_folder_path=str(data_path))
+    # Or if data is always relative to a project root from where script is run:
+    
     try:
-        with open('data/database_schema.sql', 'r') as f:
-            pass # File exists
-    except FileNotFoundError:
-        print("Creating dummy 'data/database_schema.sql' for demonstration.")
-        import os
-        os.makedirs('data', exist_ok=True)
-        with open('data/database_schema.sql', 'w') as f:
-            f.write(
-                "CREATE TABLE Users (user_id INT PRIMARY KEY, username VARCHAR(50), email VARCHAR(100), registration_date DATE);\n"
-                "CREATE TABLE Products (product_id INT PRIMARY KEY, product_name VARCHAR(100), price DECIMAL(10, 2), category_id INT);\n"
-                "CREATE TABLE Orders (order_id INT PRIMARY KEY, user_id INT, order_date TIMESTAMP, total_amount MONEY, "
-                "FOREIGN KEY (user_id) REFERENCES Users(user_id));\n"
-                "ALTER TABLE Products ADD CONSTRAINT fk_category FOREIGN KEY (category_id) REFERENCES Categories(category_id);\n" # Assume Categories table exists
-                "CREATE TABLE Categories (category_id INT PRIMARY KEY, category_name VARCHAR(50));\n"
-            )
-        print("Dummy DDL created. Please re-run the script if SchemaParser previously failed due to missing file.")
-
-
-    try:
-        generator = ExampleQueryGenerator('data/database_schema.sql')
-        # Check if tables were parsed
-        if not generator.schema_parser.tables:
-            print("No tables parsed from DDL. Cannot generate meaningful queries.")
-            print("Please ensure 'data/database_schema.sql' is valid and contains CREATE TABLE statements.")
+        generator = ExampleQueryGenerator() # Uses default data_folder_path="data/"
+        
+        # Check if tables were loaded by CSVSchemaLoader
+        if not generator.csv_loader.get_tables():
+            print("No tables loaded from CSV files. Cannot generate meaningful queries.")
+            print("Please ensure 'table_related_information.csv', 'column_related_information.csv', "
+                  "and 'join_related_information.csv' exist in the 'data/' directory and are readable.")
         else:
-            print(f"Schema loaded. Tables: {list(generator.schema_parser.tables.keys())}")
-            print(f"Relationships: {generator.schema_parser.relationships}")
+            loaded_tables = [table.name for table in generator.csv_loader.get_tables()]
+            print(f"Schema loaded from CSVs. Tables: {loaded_tables}")
             
-            example_queries = generator.generate_example_queries(num_queries_per_type=2) # Generate 2 of each type
+            loaded_fks = generator.csv_loader.get_foreign_keys()
+            print(f"Number of foreign keys loaded: {len(loaded_fks)}")
+            if loaded_fks:
+                 print("Sample Foreign Keys (first 3):")
+                 for fk_info in loaded_fks[:3]:
+                     print(f"  {fk_info.primary_table_name}.{fk_info.primary_table_column} -> "
+                           f"{fk_info.foreign_table_name}.{fk_info.foreign_table_column}")
+            
+            example_queries = generator.generate_example_queries(num_queries_per_type=2) 
 
             print("\nGenerated Example Queries:")
-            if not example_queries:
-                print("-- No queries were generated. Check schema and generation logic.")
+            if not example_queries or all(q.startswith("-- No") for q in example_queries):
+                print("-- No meaningful queries were generated. Check CSV data and generation logic.")
             for i, query in enumerate(example_queries):
                 print(f"{i+1}. {query}")
 
-            output_file = "data/example_queries.jsonl"
+            output_file = "data/example_queries.jsonl" # Assumes data/ is writable
             generator.save_queries_to_file(example_queries, output_file)
             print(f"\nSuccessfully saved {len(example_queries)} queries to {output_file}")
 
-    except FileNotFoundError:
-        print("Error: The DDL file 'data/database_schema.sql' was not found.")
-        print("Please create this file with your database schema or ensure the path is correct.")
+    except FileNotFoundError: # This might be caught by CSVSchemaLoader now
+        print("Error: One or more required CSV schema files were not found in 'data/'.")
+        print("Please ensure 'table_related_information.csv', 'column_related_information.csv', "
+              "and 'join_related_information.csv' exist.")
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
         import traceback
