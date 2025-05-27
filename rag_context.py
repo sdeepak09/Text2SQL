@@ -79,30 +79,64 @@ class RAGContextProvider:
         return "\n".join(schema_parts)
 
     def get_relevant_context(self, query: str) -> Dict[str, Any]:
-        """Get relevant schema context based on the query using embeddings."""
-        retrieved_docs = []
-        if self.query_retriever:
-            try:
-                retrieved_docs = self.query_retriever.retrieve_relevant_documents(query, k=5)
-            except Exception as e:
-                logger.error(f"Error retrieving documents from QueryRetriever: {e}", exc_info=True)
-                retrieved_docs = [] # Ensure it's an empty list on error
-        else:
-            logger.warning("QueryRetriever not initialized. Cannot retrieve documents.")
+        logger.info(f"Starting get_relevant_context for query: '{query[:100]}...'")
+        try:
+            retrieved_docs = []
+            if self.query_retriever:
+                logger.info("Attempting to retrieve documents from QueryRetriever...")
+                try:
+                    retrieved_docs = self.query_retriever.retrieve_relevant_documents(query, k=5)
+                    logger.info(f"Successfully retrieved {len(retrieved_docs)} documents from QueryRetriever.")
+                    # Log a sample of retrieved_docs for inspection, being mindful of size
+                    if retrieved_docs:
+                        logger.debug(f"Sample of retrieved_docs (first doc, first 100 chars of content): {str(retrieved_docs[0])[:200] if retrieved_docs else 'N/A'}")
+                        # More detailed logging for all docs if needed, but can be verbose:
+                        # for i, doc_item_log in enumerate(retrieved_docs):
+                        #    logger.debug(f"Retrieved doc {i}: {str(doc_item_log)[:200]}")
+
+                except Exception as e:
+                    logger.error(f"Error during retrieve_relevant_documents: {e}", exc_info=True)
+                    # The error is caught here, but graph_builder.py logs a generic '"column"'
+                    # This suggests 'e' or str(e) might be '"column"' or related.
+                    # Let's log str(e) to see if it matches.
+                    logger.error(f"Exception string from retrieve_relevant_documents: {str(e)}")
+                    retrieved_docs = [] 
+            else:
+                logger.warning("QueryRetriever not initialized. Cannot retrieve documents.")
             
-        relevant_schema_data = self._search_csv_schema(query)
-        
-        formatted_context = self._format_relevant_schema(relevant_schema_data)
-        # statement_context = self._format_relevant_statements(relevant_statements) # Old
-        statement_context = self._format_retrieved_documents(retrieved_docs) # New
-        
-        return {
-            "relevant_schema": formatted_context, # This comes from _format_relevant_schema
-            "relevant_statements": statement_context, # This now comes from _format_retrieved_documents
-            "full_schema": self.full_schema,
-            "relevant_tables": list(relevant_schema_data["tables"].keys()) if relevant_schema_data and "tables" in relevant_schema_data else [],
-            "query_terms": self._extract_query_terms(query)
-        }
+            logger.info("Searching CSV schema...")
+            relevant_schema_data = self._search_csv_schema(query)
+            logger.info(f"CSV schema search complete. Found {len(relevant_schema_data.get('tables', {}))} relevant tables.")
+
+            logger.info("Formatting relevant schema...")
+            formatted_context = self._format_relevant_schema(relevant_schema_data)
+            logger.info("Relevant schema formatting complete.")
+
+            logger.info("Formatting retrieved documents...")
+            statement_context = self._format_retrieved_documents(retrieved_docs)
+            logger.info("Retrieved documents formatting complete.")
+            
+            final_context = {
+                "relevant_schema": formatted_context, 
+                "relevant_statements": statement_context, 
+                "full_schema": self.full_schema,
+                "relevant_tables": list(relevant_schema_data["tables"].keys()) if relevant_schema_data and "tables" in relevant_schema_data else [],
+                "query_terms": self._extract_query_terms(query)
+            }
+            logger.info("Successfully prepared relevant context dictionary.")
+            return final_context
+
+        except Exception as e_main:
+            # This is a catch-all for any unexpected error within get_relevant_context itself
+            logger.error(f"CRITICAL UNHANDLED ERROR in get_relevant_context: {e_main}", exc_info=True)
+            # Return a minimal, safe dictionary to prevent further crashes downstream if possible
+            return {
+                "relevant_schema": "Error: Could not generate schema context.",
+                "relevant_statements": "Error: Could not generate statements.",
+                "full_schema": self.full_schema if hasattr(self, 'full_schema') else "Schema not available.",
+                "relevant_tables": [],
+                "query_terms": []
+            }
 
     def _search_csv_schema(self, query: str) -> Dict[str, Any]:
         """Mimics search_schema using CSVSchemaLoader."""
@@ -203,17 +237,33 @@ class RAGContextProvider:
         return formatted
     
     # def _format_relevant_statements(self, statements: List[Dict[str, Any]]) -> str: # Old
-    def _format_retrieved_documents(self, retrieved_docs: List[Dict[str, Any]]) -> str: # New
+    def _format_retrieved_documents(self, retrieved_docs: List[Any]) -> str: # Allow List[Any] for initial check
         if not retrieved_docs:
-            return "-- No specific statements/examples retrieved." # Provide a clear message
+            return "-- No specific statements/examples retrieved."
         
         formatted_parts = []
-        for doc in retrieved_docs:
-            content = doc.get('content', '').strip() # Ensure content is stripped
-            metadata = doc.get('metadata', {})
-            meta_type = metadata.get('type', 'unknown')
+        for i, doc_item in enumerate(retrieved_docs): # Use enumerate for logging index
+            # Ensure doc_item is a dictionary
+            if not isinstance(doc_item, dict):
+                logger.warning(f"Skipping malformed document at index {i} in retrieved_docs: item is not a dictionary. Item: {str(doc_item)[:100]}")
+                continue
+
+            content = doc_item.get('content', '').strip()
             
-            # Only add if content is not empty
+            raw_metadata = doc_item.get('metadata')
+            if not isinstance(raw_metadata, dict):
+                logger.warning(f"Skipping document with malformed metadata at index {i}: metadata is not a dictionary. Document content: '{str(content)[:100]}...', Metadata: {str(raw_metadata)[:100]}")
+                # Optionally, still try to use the content if it's valuable
+                # if content:
+                #    formatted_parts.append(f"-- Retrieved Context (metadata missing/malformed):\n{content}")
+                # For now, let's skip if metadata is bad, as type is derived from it.
+                # Or, provide a default type if metadata is problematic but content exists.
+                metadata = {} # Use empty dict if metadata is not a dict
+            else:
+                metadata = raw_metadata
+                
+            meta_type = metadata.get('type', 'unknown') # Default to 'unknown' if type key is missing
+            
             if content:
                 if meta_type == 'table':
                     table_name = metadata.get('table_name', 'Unknown Table')
@@ -224,11 +274,15 @@ class RAGContextProvider:
                     formatted_parts.append(f"-- Retrieved Column Description for {table_name}.{column_name}:\n{content}")
                 elif meta_type == 'example_query':
                     formatted_parts.append(f"-- Retrieved Example SQL Query:\n{content}")
-                else: # Fallback for any other type or if type is missing in metadata
-                    formatted_parts.append(f"-- Retrieved Context:\n{content}")
-        
-        if not formatted_parts: # If all docs had empty content or were filtered.
-             return "-- No relevant statements/examples retrieved with content."
+                else: 
+                    # This will also catch cases where metadata was initially malformed and reset to {}
+                    # or if meta_type was not 'table', 'column', or 'example_query'.
+                    formatted_parts.append(f"-- Retrieved Context (type: {meta_type}):\n{content}")
+            # else:
+            #    logger.info(f"Skipping document at index {i} due to empty content after stripping.")
+
+        if not formatted_parts:
+             return "-- No relevant statements/examples retrieved with usable content or structure."
 
         return "\n\n".join(formatted_parts)
 

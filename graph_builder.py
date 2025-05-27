@@ -37,96 +37,119 @@ embeddings = OpenAIEmbeddings(model="text-embedding-3-small")  # or text-embeddi
 # Define the graph nodes
 def explain_query_node(state: GraphState) -> GraphState:
     """Node that explains the query."""
-    logger.info(f"explain_query_node called with state: {state}")
+    logger.info(f"explain_query_node: Called with current_query: '{state['current_query'][:100]}...'")
     
-    # Get the current query
     query = state["current_query"]
-    
-    # Get the LLM
     llm = get_llm()
     
-    # Get relevant schema context using RAG
+    logger.debug("explain_query_node: Retrieving relevant schema context...")
     context = get_relevant_schema_context(query)
     relevant_schema = context["relevant_schema"]
-    relevant_statements = context.get("relevant_statements", "")
-    
-    # Generate the explanation
-    try:
-        # Get the prompt for query explanation
-        prompt = get_query_explanation_prompt()
+    relevant_statements = context.get("relevant_statements", "") # Ensure it's a string, even if empty
+
+    # Log details of the context
+    logger.debug(f"explain_query_node: Type of relevant_schema: {type(relevant_schema)}, Length: {len(relevant_schema) if isinstance(relevant_schema, (str, list, dict)) else 'N/A'}")
+    logger.debug(f"explain_query_node: Snippet of relevant_schema: {str(relevant_schema)[:200]}...")
+    logger.debug(f"explain_query_node: Type of relevant_statements: {type(relevant_statements)}, Length: {len(relevant_statements) if isinstance(relevant_statements, (str, list, dict)) else 'N/A'}")
+    logger.debug(f"explain_query_node: Snippet of relevant_statements: {str(relevant_statements)[:200]}...")
+    logger.debug(f"explain_query_node: Type of query: {type(query)}, Query: {query}")
+
+    try: # Outer try for the whole explanation generation
+        logger.debug("explain_query_node: Getting query explanation prompt template...")
+        prompt_template = get_query_explanation_prompt()
         
-        # Generate the explanation
-        response = llm.invoke(prompt.format(
-            relevant_schema=relevant_schema,
-            relevant_statements=relevant_statements,
-            query=query
-        ))
+        # ---> ADD NEW LOGGING HERE <---
+        logger.debug("------------- PROMPT TEMPLATE TO BE FORMATTED -------------")
+        logger.debug(f"TEMPLATE STRING: {prompt_template.template}")
+        logger.debug("---------------------------------------------------------")
+        logger.debug("------------- RELEVANT SCHEMA FOR FORMATTING -------------")
+        logger.debug(relevant_schema) # Log full content
+        logger.debug("----------------------------------------------------------")
+        logger.debug("------------- RELEVANT STATEMENTS FOR FORMATTING -------------")
+        logger.debug(relevant_statements) # Log full content
+        logger.debug("--------------------------------------------------------------")
+        logger.debug("------------- QUERY FOR FORMATTING -------------")
+        logger.debug(query) # Log full content
+        logger.debug("------------------------------------------------")
         
-        # Log the response
-        logger.debug(f"LLM response: {response.content}")
-        print(f"LLM response: {response.content}")
+        formatted_prompt_str = "" # Initialize
         
-        # Parse the explanation
+        try:
+            logger.debug("explain_query_node: Attempting to format prompt...")
+            formatted_prompt_str = prompt_template.format(
+                relevant_schema=relevant_schema,
+                relevant_statements=relevant_statements,
+                query=query
+            )
+            logger.debug(f"explain_query_node: Successfully formatted prompt. Length: {len(formatted_prompt_str)}")
+            logger.debug(f"explain_query_node: Formatted prompt (first 500 chars): {formatted_prompt_str[:500]}...")
+        except Exception as format_exception:
+            logger.error(f"explain_query_node: ERROR DURING PROMPT FORMATTING: {format_exception}", exc_info=True)
+            logger.error(f"explain_query_node: String of format_exception: {str(format_exception)}")
+            # This error will be caught by the outer try/except, which logs str(e) and sets fallback
+            raise # Rethrow to be caught by the outer try/except
+
+        logger.debug("explain_query_node: Invoking LLM for query explanation...")
+        response = llm.invoke(formatted_prompt_str)
+        # Log the raw response immediately
+        logger.debug(f"explain_query_node: Raw LLM response content: {response.content}")
+        
+        # The existing print(f"LLM response: {response.content}") can be removed if too verbose for production
+        # print(f"LLM response: {response.content}") # Retaining for now as per instructions
+        
+        logger.debug("explain_query_node: Attempting to parse LLM response.")
         explanation, error = parse_query_explanation(response.content)
         
-        # If there's an error, provide a fallback explanation
         if error:
-            logger.warning(f"Error parsing explanation: {error}")
-            # Create a fallback explanation as a dictionary
+            logger.warning(f"explain_query_node: Error parsing explanation from LLM: {error}")
+            # Fallback logic when 'error' from parse_query_explanation is set
             explanation_dict = {
-                "explanation": f"I'll try to answer your question about: '{query}'",
-                "tables": [],
+                "explanation": f"I'll try to answer your question about: '{query}'", # Using current query
+                "tables": [], # Ensure these are present as per QueryExplanation model, even if empty
                 "columns": []
             }
-            # Update the state with the explanation dictionary
             state["query_explanation"] = explanation_dict
-            
-            # Add the explanation to the conversation history
             state["conversation_history"].append({
                 "role": "assistant",
-                "content": f"I understand your query as follows:\n\n{explanation_dict['explanation']}"
+                "type": "simple_explanation", # Using consistent type
+                "content": f"I understand your query as follows:\n\n{explanation_dict['explanation']}\n(Note: There was an issue parsing the detailed explanation.)"
             })
         else:
-            # Convert the Pydantic model to a dictionary
-            explanation_dict = explanation.dict() if hasattr(explanation, 'dict') else explanation
-            
-            # Update the state with the explanation dictionary
+            logger.info("explain_query_node: Successfully parsed LLM explanation.")
+            explanation_dict = explanation.dict() # Pydantic model to dict
             state["query_explanation"] = explanation_dict
             
-            # Add the explanation to the conversation history
-            # Access new fields from the explanation_dict (which should have them from the Pydantic model)
             query_summary = explanation_dict.get("query_summary_llm")
             step_by_step_breakdown = explanation_dict.get("step_by_step_breakdown_llm")
 
             if query_summary and step_by_step_breakdown:
+                logger.debug("explain_query_node: Using new structured explanation for conversation history.")
                 state["conversation_history"].append({
                     "role": "assistant",
-                    "type": "query_understanding",  # Custom type for Streamlit to identify
+                    "type": "query_understanding",
                     "summary": query_summary,
                     "breakdown": step_by_step_breakdown,
-                    "structured_explanation_raw": explanation_dict # Optional: pass the full JSON if needed by UI
+                    "structured_explanation_raw": explanation_dict
                 })
-            elif explanation_dict.get("summary_of_understanding"): # Fallback to existing field if new ones aren't populated
+            elif explanation_dict.get("summary_of_understanding"):
+                logger.debug("explain_query_node: Falling back to 'summary_of_understanding' for conversation history.")
                 explanation_text = explanation_dict["summary_of_understanding"]
                 state["conversation_history"].append({
                     "role": "assistant",
                     "type": "simple_explanation",
                     "content": f"I understand your query as follows:\n\n{explanation_text}"
                 })
-            else: # Further fallback
-                fallback_text = f"I'll try to answer your question about: '{state['current_query']}'"
-                # If explanation_dict itself is the fallback from an error, it might not have summary_of_understanding
-                if "explanation" in explanation_dict and isinstance(explanation_dict["explanation"], str): # Check if it's the minimal fallback
-                     fallback_text = explanation_dict["explanation"]
-
+            else:
+                logger.warning("explain_query_node: No detailed summary found in parsed explanation. Using generic fallback.")
+                fallback_text = f"I'll try to answer your question about: '{query}'"
                 state["conversation_history"].append({
                     "role": "assistant",
                     "type": "simple_explanation",
                     "content": fallback_text
                 })
-        
-    except Exception as e:
-        logger.error(f"Error in explain_query_node: {str(e)}")
+
+    except Exception as e: # Outer catch-all
+        logger.error(f"explain_query_node: Unhandled error during query explanation: {str(e)}", exc_info=True)
         # Provide a fallback explanation in case of any error
         explanation_dict = {
             "explanation": f"Attempting to answer: '{query}'",
@@ -136,9 +159,11 @@ def explain_query_node(state: GraphState) -> GraphState:
         state["query_explanation"] = explanation_dict
         state["conversation_history"].append({
             "role": "assistant",
-            "content": f"I'll try to answer your question about: '{query}'\n\n(Note: I encountered an issue while analyzing your query, but I'll do my best to answer it.)"
+            "type": "simple_explanation", # Consistent type
+            "content": f"I'll try to answer your question about: '{query}'\n\n(Note: I encountered an unexpected issue while analyzing your query, but I'll do my best.)"
         })
     
+    logger.info("explain_query_node: Exiting.")
     return state
 
 def generate_sql_node(state: GraphState) -> GraphState:

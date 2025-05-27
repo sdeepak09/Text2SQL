@@ -46,10 +46,10 @@ Analyze the query and provide a structured explanation in JSON format with the f
 - identified_intent: A brief description of what the user is asking for (e.g., 'retrieve data', 'aggregate data').
 - target_tables: An array of table names that are relevant to the query.
 - target_columns: An array of column names that should be included in the result or used in calculations.
-- filter_conditions: List of filter objects (e.g., `[{"column": "age", "operator": ">", "value": 30}]`) or an empty list `[]` if no filters apply.
-- join_conditions: List of join objects (e.g., `[{"table1": "Orders", "column1": "CustomerID", "table2": "Customers", "column2": "ID"}]`) or an empty list `[]` if no joins.
+- filter_conditions: List of filter objects (e.g., `[{{""column"": ""age"", ""operator"": "">"", ""value"": 30}}]`) or an empty list `[]` if no filters apply.
+- join_conditions: List of join objects (e.g., `[{{""table1"": ""Orders"", ""column1"": ""CustomerID"", ""table2"": ""Customers"", ""column2"": ""ID""}}]`) or an empty list `[]` if no joins.
 - group_by: List of column names to group by (e.g., `["department"]`), or an empty list `[]` if no grouping.
-- order_by: An order_by object (e.g., `{"column": "name", "direction": "ASC"}`) or `null` if no ordering is needed.
+- order_by: An order_by object (e.g., `{{""column"": ""name"", ""direction"": ""ASC""}}`) or `null` if no ordering is needed.
 - limit: An integer specifying the number of results (e.g., `10`) or `null` if no limit.
 - summary_of_understanding: A concise technical summary of your understanding, focusing on how the query maps to schema elements.
 
