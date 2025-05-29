@@ -1,4 +1,3 @@
-import sqlite3
 import os
 from sqlalchemy import create_engine, text
 from datetime import datetime, timedelta
@@ -7,9 +6,6 @@ from rag_context import RAGContextProvider
 
 # Ensure data directory exists
 os.makedirs('data', exist_ok=True)
-
-# Database path
-DB_PATH = 'data/company.db'
 
 # Initialize the RAG context provider
 rag_provider = RAGContextProvider()

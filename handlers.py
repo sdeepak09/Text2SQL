@@ -1,5 +1,5 @@
 import streamlit as st
-import pandas as pd
+# import pandas as pd # Removed as it's no longer used
 import traceback
 import re
 import logging
@@ -8,8 +8,8 @@ from graph_builder import (
     update_state_with_feedback, 
     update_state_with_clarification,
     explain_query_node,
-    generate_sql_node,
-    execute_query_node
+    generate_sql_node
+    # execute_query_node # Removed as it's no longer used by the simplified graph
 )
 
 import os # Added import
@@ -18,108 +18,6 @@ from rag_sql_llm import RAGSQLGenerator # Added import
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-def execute_query(query, db_path):
-    """Execute an SQL query and return the results as a DataFrame."""
-    try:
-        import sqlite3
-        conn = sqlite3.connect(db_path)
-        df = pd.read_sql_query(query, conn)
-        conn.close()
-        return df, None
-    except Exception as e:
-        return None, str(e)
-
-def process_query(query: str): # Added type hint for query
-    """
-    Process a natural language query using RAGSQLGenerator to get an SQL query,
-    then execute it.
-    """
-    logger.info(f"Processing query with RAGSQLGenerator: {query}")
-    
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    if not openai_api_key:
-        logger.error("OPENAI_API_KEY not found.")
-        return {
-            "sql_query": None,
-            "results": None,
-            "error": "OPENAI_API_KEY not found. Cannot initialize RAG SQL Generator."
-        }
-
-    # Path for the FAISS index, ensure this is where your index is stored
-    faiss_index_folder_path = "data/context_faiss_store_v1" 
-
-    try:
-        rag_generator = RAGSQLGenerator(
-            openai_api_key=openai_api_key,
-            faiss_index_folder_path=faiss_index_folder_path
-        )
-        if rag_generator.query_retriever.vector_store is None:
-            error_msg = f"Failed to load FAISS index from {faiss_index_folder_path}. RAG pipeline cannot operate."
-            logger.error(error_msg)
-            return {
-                "sql_query": None,
-                "results": None,
-                "error": error_msg
-            }
-    except Exception as e:
-        logger.error(f"Failed to initialize RAGSQLGenerator: {e}", exc_info=True)
-        return {
-            "sql_query": None,
-            "results": None,
-            "error": f"Error initializing RAG SQL Generator: {str(e)}"
-        }
-
-    # Generate SQL query using RAGSQLGenerator
-    sql_query = None
-    error_message_from_rag = None
-    try:
-        sql_query = rag_generator.generate_sql_query(query) # 'query' is the input to process_query
-        
-        if not sql_query:
-            error_message_from_rag = "RAG SQL Generator returned an empty query."
-            logger.warning(error_message_from_rag)
-        elif sql_query.startswith("-- "): # Handles specific error messages from RAG
-            error_message_from_rag = f"RAG SQL Generator indicated an issue: {sql_query}"
-            logger.warning(error_message_from_rag)
-            # Set sql_query to None so it's not executed
-            sql_query = None 
-        
-        if error_message_from_rag:
-            return {
-                "sql_query": None, 
-                "results": None,
-                "error": error_message_from_rag
-            }
-        logger.info(f"Generated SQL query: {sql_query}")
-
-    except Exception as e:
-        logger.error(f"Error during RAG SQL generation: {e}", exc_info=True)
-        return {
-            "sql_query": None,
-            "results": None,
-            "error": f"Error generating SQL via RAG: {str(e)}"
-        }
-
-    # Execute the query if one was successfully generated
-    results = None
-    db_error = None # Changed variable name from 'error' to 'db_error' to avoid conflict
-    
-    if sql_query:
-        try:
-            results, db_error = execute_query(sql_query, st.session_state.db_path)
-            if db_error:
-                logger.error(f"Error executing SQL query '{sql_query}': {db_error}")
-        except Exception as e: # Catch unexpected errors during execution call itself
-            logger.error(f"Unexpected error during execute_query call for '{sql_query}': {e}", exc_info=True)
-            db_error = f"Unexpected error executing query: {str(e)}"
-            results = None # Ensure results are None if execution fails badly
-
-    return {
-        "sql_query": sql_query,
-        "results": results,
-        "error": db_error # This will be None if query executed successfully, or the DB error.
-    }
 
 # Add a simpler approach that doesn't rely on LangGraph's complex features
 def process_new_query_simple(query):

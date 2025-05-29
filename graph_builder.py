@@ -3,7 +3,7 @@ from langgraph.graph import StateGraph, END
 from pydantic_models import QueryExplanation, SQLOutput, QueryResult
 from llm_utils import (
     get_llm, get_query_explanation_prompt, get_sql_generation_prompt,
-    parse_query_explanation, validate_sql_query, execute_sql_query, get_relevant_schema_context
+    parse_query_explanation, get_relevant_schema_context # Removed validate_sql_query, execute_sql_query
 )
 from db_setup import get_formatted_schema
 import json
@@ -204,34 +204,17 @@ def generate_sql_node(state: GraphState) -> GraphState:
         # Parse the SQL
         sql_query = response.content.strip()
         
-        # Validate the SQL query
-        is_valid, error = validate_sql_query(sql_query, "data/company.db")
-        
-        if is_valid:
-            logger.info(f"Successfully generated SQL: {sql_query}")
-            
-            # Update the state with the SQL
-            state["generated_sql"] = {"sql_query": sql_query}
-            
-            # Format SQL for better readability
-            formatted_sql = sql_query
-            
-            # Add the SQL to the conversation history
-            state["conversation_history"].append({
-                "role": "assistant",
-                "content": f"Here's the SQL query to answer your question:\n\n```sql\n{formatted_sql}\n```"
-            })
-        else:
-            logger.warning(f"Generated invalid SQL: {sql_query}. Error: {error}")
-            
-            # Update the state with the error
-            state["error_message"] = f"Generated invalid SQL: {error}"
-            
-            # Add the error to the conversation history
-            state["conversation_history"].append({
-                "role": "assistant",
-                "content": f"I tried to generate SQL but encountered an error: {error}\n\nHere's what I came up with, but it's not valid:\n\n```sql\n{sql_query}\n```"
-            })
+        # (after sql_query = response.content.strip())
+        logger.info(f"Successfully generated SQL (validation step removed): {sql_query}")
+        state["generated_sql"] = {"sql_query": sql_query}
+        # Format SQL for better readability (this can be kept)
+        formatted_sql = sql_query 
+        state["conversation_history"].append({
+            "role": "assistant",
+            "content": f"Here's the SQL query to answer your question:\n\n```sql\n{formatted_sql}\n```"
+        })
+        # No error handling here for invalid SQL for now, as validation was removed.
+        # The responsibility shifts to the LLM to produce valid SQL based on good context.
     
     except Exception as e:
         logger.error(f"Error in generate_sql_node: {str(e)}")
@@ -246,153 +229,6 @@ def generate_sql_node(state: GraphState) -> GraphState:
         })
     
     return state
-
-def execute_query_node(state: GraphState) -> GraphState:
-    """Node that executes the SQL query."""
-    try:
-        # Get the SQL from the state
-        sql_output_dict = state["generated_sql"]
-        
-        # Convert back to Pydantic model if needed
-        if sql_output_dict and not isinstance(sql_output_dict, SQLOutput):
-            sql_output = SQLOutput(**sql_output_dict)
-        else:
-            sql_output = sql_output_dict
-        
-        # Execute the query
-        try:
-            query_result = execute_sql_query(sql_output.sql_query, "data/company.db")
-            
-            # Update the state with the result
-            logger.info(f"Successfully executed query. Found {len(query_result.data) if query_result.data else 0} results.")
-            return {
-                **state,
-                "query_result": query_result.dict(),  # Store as dict
-                "error_message": None,
-                "conversation_history": state["conversation_history"] + [
-                    {"role": "assistant", "content": format_query_result_message(query_result)}
-                ]
-            }
-        except Exception as e:
-            error_message = str(e)
-            logger.error(f"Error executing query: {error_message}")
-            
-            # Check if the error is due to missing columns or tables
-            if "no such column:" in error_message or "no such table:" in error_message:
-                # Try to regenerate the SQL with corrected schema information
-                return retry_sql_generation(state, error_message)
-            
-            # For other errors, just update the state
-            return {
-                **state,
-                "query_result": None,
-                "error_message": f"Error executing query: {error_message}",
-                "conversation_history": state["conversation_history"] + [
-                    {"role": "assistant", "content": f"I encountered an error while executing the query: {error_message}"}
-                ]
-            }
-    except Exception as e:
-        logger.error(f"Error in execute_query_node: {str(e)}")
-        return {
-            **state,
-            "query_result": None,
-            "error_message": f"Error in execute_query_node: {str(e)}",
-            "conversation_history": state["conversation_history"] + [
-                {"role": "assistant", "content": f"I encountered an error while processing the query: {str(e)}"}
-            ]
-        }
-
-def retry_sql_generation(state: GraphState, error_message: str) -> GraphState:
-    """Retry SQL generation with corrected schema information."""
-    try:
-        # Get the database schema
-        schema = get_formatted_schema()
-        
-        # Get the LLM
-        llm = get_llm(temperature=0)
-        
-        # Create a prompt for SQL correction
-        prompt_file_path = pathlib.Path("prompts") / "sql_correction.txt"
-        try:
-            template_string = prompt_file_path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            logger.error(f"Prompt file not found: {prompt_file_path}")
-            raise FileNotFoundError(f"Prompt file not found: {prompt_file_path}. Please ensure it exists.")
-
-        correction_prompt_formatted = template_string.format(
-            error_message=error_message,
-            schema=schema, 
-            original_sql_query=state["generated_sql"]["sql_query"] 
-        )
-        
-        # Generate the corrected SQL
-        response = llm.invoke(correction_prompt_formatted).content
-        
-        # Extract just the SQL (remove any markdown or explanations)
-        import re
-        sql_match = re.search(r'```sql\n(.*?)\n```', response, re.DOTALL)
-        if sql_match:
-            corrected_sql = sql_match.group(1)
-        else:
-            # Try to find SQL without markdown
-            sql_lines = [line for line in response.split('\n') if line.strip() and not line.startswith('#')]
-            corrected_sql = '\n'.join(sql_lines)
-        
-        # Validate the corrected SQL
-        sql_output = validate_sql_query(corrected_sql, "data/company.db")
-        
-        if not sql_output.query_valid:
-            # If still invalid, update the state with the error
-            logger.error(f"Corrected SQL is still invalid: {sql_output.validation_error}")
-            return {
-                **state,
-                "generated_sql": sql_output.dict(),
-                "error_message": f"Could not correct SQL: {sql_output.validation_error}",
-                "conversation_history": state["conversation_history"] + [
-                    {"role": "assistant", "content": f"I tried to fix the query but encountered another error: {sql_output.validation_error}"}
-                ]
-            }
-        
-        # Try to execute the corrected query
-        try:
-            query_result = execute_sql_query(sql_output.sql_query, "data/company.db")
-            
-            # Update the state with the result
-            logger.info(f"Successfully executed corrected query. Found {len(query_result.data) if query_result.data else 0} results.")
-            return {
-                **state,
-                "generated_sql": sql_output.dict(),
-                "query_result": query_result.dict(),
-                "error_message": None,
-                "conversation_history": state["conversation_history"] + [
-                    {"role": "assistant", "content": f"I had to adjust the query to match the available columns. Here's the corrected SQL:\n\n```sql\n{sql_output.sql_query}\n```"},
-                    {"role": "assistant", "content": format_query_result_message(query_result)}
-                ]
-            }
-        except Exception as e:
-            # If execution still fails, update the state with the error
-            error_message = str(e)
-            logger.error(f"Error executing corrected query: {error_message}")
-            return {
-                **state,
-                "generated_sql": sql_output.dict(),
-                "query_result": None,
-                "error_message": f"Error executing corrected query: {error_message}",
-                "conversation_history": state["conversation_history"] + [
-                    {"role": "assistant", "content": f"I tried to correct the query but still encountered an error: {error_message}"}
-                ]
-            }
-    except Exception as e:
-        # If correction fails, update the state with the error
-        logger.error(f"Error in retry_sql_generation: {str(e)}")
-        return {
-            **state,
-            "query_result": None,
-            "error_message": f"Error in retry_sql_generation: {str(e)}",
-            "conversation_history": state["conversation_history"] + [
-                {"role": "assistant", "content": f"I tried to correct the query but encountered an error: {str(e)}"}
-            ]
-        }
 
 def format_query_result_message(query_result):
     """Format a message to display query results."""
@@ -444,7 +280,7 @@ def build_graph():
     # Add the nodes
     graph.add_node("explain_query", explain_query_node)
     graph.add_node("generate_sql", generate_sql_node)
-    graph.add_node("execute_query", execute_query_node)
+    # graph.add_node("execute_query", execute_query_node) # Removed
     
     # Define placeholder nodes that properly handle the state
     def wait_for_feedback_node(state: GraphState) -> GraphState:
@@ -497,8 +333,9 @@ def build_graph():
     )
     
     # Add the regular edges
-    graph.add_edge("generate_sql", "execute_query")
-    graph.add_edge("execute_query", END)
+    # graph.add_edge("generate_sql", "execute_query") # Removed
+    graph.add_edge("generate_sql", END) # New edge
+    # graph.add_edge("execute_query", END) # Removed
     graph.add_edge("wait_for_clarification", "explain_query")
     
     # Set the entry point
