@@ -33,7 +33,7 @@ class QueryExplanation(BaseModel):
 
     # New fields:
     query_summary_llm: Optional[str] = Field(default=None, description="LLM's natural language summary of the user query.")
-    step_by_step_breakdown_llm: Optional[str] = Field(default=None, description="LLM's step-by-step breakdown of its plan to generate SQL.")
+    step_by_step_breakdown_llm: Optional[List[str]] = Field(default=None, description="LLM's step-by-step plan as a list of strings, where each string is one step.")
 
     @validator('order_by', pre=True, always=True)
     def empty_list_to_none_for_order_by(cls, v):

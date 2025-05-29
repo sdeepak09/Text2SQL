@@ -32,27 +32,24 @@ def display_chat_messages(messages):
         with st.chat_message(message["role"], avatar=avatar):
             if message["role"] == "assistant" and message.get("type") == "query_understanding":
                 summary_text = message.get("summary", "")
-                breakdown_text_raw = message.get("breakdown", "") 
+                # New simplified logic for breakdown processing:
+                breakdown_data = message.get("breakdown") # This is now expected to be List[str]
 
                 html_breakdown_lines = []
-                if isinstance(breakdown_text_raw, str) and breakdown_text_raw.strip():
-                    steps = re.findall(r'(\d+\.\s+[\s\S]*?(?=(\s*\d+\.\s+)|$))', breakdown_text_raw)
-                    if steps:
-                        for step_match in steps:
-                            step_text = step_match[0].strip() 
-                            if step_text:
-                                html_breakdown_lines.append(f"<p style='margin: 0.2em 0;'>{step_text}</p>")
-                    elif breakdown_text_raw.strip(): 
-                        html_breakdown_lines.append(f"<p style='margin: 0.2em 0;'>{breakdown_text_raw.strip()}</p>")
-                elif isinstance(breakdown_text_raw, list): 
-                    for i, item in enumerate(breakdown_text_raw):
-                        item_stripped = str(item).strip()
-                        if item_stripped:
-                            html_breakdown_lines.append(f"<p style='margin: 0.2em 0;'>{i+1}. {item_stripped}</p>")
+                if isinstance(breakdown_data, list):
+                    for i, step_text in enumerate(breakdown_data):
+                        step_stripped = str(step_text).strip() # Ensure it's a string and stripped
+                        if step_stripped:
+                            # Prepend number to the step text itself, then wrap in <p>
+                            html_breakdown_lines.append(f"<p style='margin: 0.2em 0;'>{i+1}. {step_stripped}</p>")
+                elif isinstance(breakdown_data, str) and breakdown_data.strip(): # Fallback if it's still a string
+                    # Fallback for string, remove logger.warning as logger is not available here
+                    html_breakdown_lines.append(f"<p style='margin: 0.2em 0;'>{breakdown_data.strip()}</p>")
+                # If breakdown_data is None or empty list, html_breakdown_lines will be empty.
                 
                 html_breakdown = "".join(html_breakdown_lines)
-                if not html_breakdown.strip() and breakdown_text_raw.strip(): 
-                    html_breakdown = f"<p style='margin: 0.2em 0;'>{breakdown_text_raw.strip()}</p>"
+                # The 'if not html_breakdown.strip() and breakdown_text_raw.strip():' fallback is removed as per new logic.
+                # The new logic handles empty list or None gracefully (empty html_breakdown).
 
                 understanding_html_content = f"""
                 <div style="background-color: #f0f2f6; padding: 15px; border-radius: 10px; border: 1px solid #dfe1e5; margin-bottom: 10px;">

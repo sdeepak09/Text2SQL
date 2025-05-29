@@ -42,7 +42,7 @@ User Query: {query}
 
 Analyze the query and provide a structured explanation in JSON format with the following fields:
 - query_summary_llm: A user-facing natural language summary of what the query is asking for.
-- step_by_step_breakdown_llm: A user-facing natural language step-by-step plan of how you will approach generating the SQL query.
+- step_by_step_breakdown_llm: Array of strings, where each string is a single step in your plan to generate the SQL query. Each step should be a complete sentence and clearly explain one part of your plan.
 - identified_intent: A brief description of what the user is asking for (e.g., 'retrieve data', 'aggregate data').
 - target_tables: An array of table names that are relevant to the query.
 - target_columns: An array of column names that should be included in the result or used in calculations.
@@ -56,7 +56,13 @@ Analyze the query and provide a structured explanation in JSON format with the f
 Return your response **only in the specified JSON format**. Ensure the JSON is well-formed.
 Example for the new fields:
   "query_summary_llm": "You want to find all employees in the 'Sales' department who were hired after January 1, 2022, and list their names and hire dates.",
-  "step_by_step_breakdown_llm": "1. I will select the employee's name and hire date. 2. I will look at the 'Employees' table. 3. I will filter for employees in the 'Sales' department. 4. I will further filter for employees hired after 2022-01-01. 5. The results will be presented as requested.",
+  "step_by_step_breakdown_llm": [
+    "Select the employee's name and hire date.",
+    "Look at the 'Employees' table.",
+    "Filter for employees in the 'Sales' department.",
+    "Further filter for employees hired after 2022-01-01.",
+    "The results will be presented as requested."
+  ],
 
 Make sure to include these new fields along with the existing ones in your JSON response.
 Return your response in this JSON format:
