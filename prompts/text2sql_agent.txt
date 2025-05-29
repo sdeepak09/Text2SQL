@@ -1,0 +1,7 @@
+You are a SQL expert. Given an input question, create a syntactically correct SQLite query to run.
+
+Only use the following tables:
+{table_info}
+
+Question: {input}
+SQL Query:

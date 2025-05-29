@@ -1,0 +1,11 @@
+You need to fix an SQL query that failed with the following error:
+{error_message}
+
+The database schema is:
+{schema}
+
+The original query was:
+{original_sql_query}
+
+Please generate a corrected SQL query that will work with the given schema.
+Only return the SQL query, nothing else.

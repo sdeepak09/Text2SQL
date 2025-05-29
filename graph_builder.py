@@ -8,6 +8,7 @@ from llm_utils import (
 from db_setup import get_formatted_schema
 import json
 import logging
+import pathlib
 from langchain_openai import OpenAIEmbeddings
 from langchain.vectorstores import FAISS
 from langchain.schema import Document
@@ -311,22 +312,21 @@ def retry_sql_generation(state: GraphState, error_message: str) -> GraphState:
         llm = get_llm(temperature=0)
         
         # Create a prompt for SQL correction
-        correction_prompt = f"""
-You need to fix an SQL query that failed with the following error:
-{error_message}
+        prompt_file_path = pathlib.Path("prompts") / "sql_correction.txt"
+        try:
+            template_string = prompt_file_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            logger.error(f"Prompt file not found: {prompt_file_path}")
+            raise FileNotFoundError(f"Prompt file not found: {prompt_file_path}. Please ensure it exists.")
 
-The database schema is:
-{schema}
-
-The original query was:
-{state["generated_sql"]["sql_query"]}
-
-Please generate a corrected SQL query that will work with the given schema.
-Only return the SQL query, nothing else.
-"""
+        correction_prompt_formatted = template_string.format(
+            error_message=error_message,
+            schema=schema, 
+            original_sql_query=state["generated_sql"]["sql_query"] 
+        )
         
         # Generate the corrected SQL
-        response = llm.invoke(correction_prompt).content
+        response = llm.invoke(correction_prompt_formatted).content
         
         # Extract just the SQL (remove any markdown or explanations)
         import re
@@ -565,26 +565,17 @@ def detect_sql_intent_node(state: GraphState) -> GraphState:
     llm = get_llm()
     
     # Create a prompt for intent detection
-    intent_prompt = f"""
-You are an intent detection agent for a Text-to-SQL system. Your job is to determine if the user's query is asking for information that can be answered with an SQL query against a database.
-
-The database contains information about a company, including employees, departments, projects, and sales data.
-
-User query: "{query}"
-
-First, analyze if this query is asking for information from a database. Then respond with one of these options:
-1. SQL_INTENT: Yes, this query is asking for database information and can be answered with SQL.
-2. NOT_SQL_INTENT: No, this query is not asking for database information or cannot be answered with SQL.
-
-For each option, provide a brief explanation of your reasoning.
-
-Format your response as:
-INTENT: [SQL_INTENT or NOT_SQL_INTENT]
-EXPLANATION: [Your explanation]
-"""
+    prompt_file_path = pathlib.Path("prompts") / "intent_detection.txt"
+    try:
+        template_string = prompt_file_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        logger.error(f"Prompt file not found: {prompt_file_path}")
+        raise FileNotFoundError(f"Prompt file not found: {prompt_file_path}. Please ensure it exists.")
+    
+    intent_prompt_formatted = template_string.format(query=query) 
     
     # Generate the intent detection
-    response = llm.invoke(intent_prompt).content
+    response = llm.invoke(intent_prompt_formatted).content
     
     # Parse the response
     intent = "NOT_SQL_INTENT"  # Default to not SQL intent

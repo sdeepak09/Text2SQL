@@ -5,6 +5,8 @@ from langchain_community.utilities import SQLDatabase
 from langchain.prompts import PromptTemplate
 from pydantic_models import QueryExplanation, SQLOutput, QueryResult
 import json
+import pathlib
+import logging
 import re
 import sqlite3
 import pandas as pd
@@ -12,6 +14,9 @@ from db_setup import get_relevant_schema_context
 
 # Load environment variables
 load_dotenv()
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 def get_llm(temperature=0):
     """Initialize and return the OpenAI LLM."""
@@ -31,68 +36,30 @@ def create_db_connection(db_path):
 
 def get_query_explanation_prompt():
     """Get the prompt template for explaining a query."""
-    template = """
-You are an expert in SQL and database schema analysis. Your task is to analyze a natural language query and explain how it relates to the database schema.
-
-{relevant_schema}
-
-{relevant_statements}
-
-User Query: {query}
-
-Analyze the query and provide a structured explanation in JSON format with the following fields:
-- query_summary_llm: A user-facing natural language summary of what the query is asking for.
-- step_by_step_breakdown_llm: Array of strings, where each string is a single step in your plan to generate the SQL query. Each step should be a complete sentence and clearly explain one part of your plan.
-- identified_intent: A brief description of what the user is asking for (e.g., 'retrieve data', 'aggregate data').
-- target_tables: An array of table names that are relevant to the query.
-- target_columns: An array of column names that should be included in the result or used in calculations.
-- filter_conditions: List of filter objects (e.g., `[{{""column"": ""age"", ""operator"": "">"", ""value"": 30}}]`) or an empty list `[]` if no filters apply.
-- join_conditions: List of join objects (e.g., `[{{""table1"": ""Orders"", ""column1"": ""CustomerID"", ""table2"": ""Customers"", ""column2"": ""ID""}}]`) or an empty list `[]` if no joins.
-- group_by: List of column names to group by (e.g., `["department"]`), or an empty list `[]` if no grouping.
-- order_by: An order_by object (e.g., `{{""column"": ""name"", ""direction"": ""ASC""}}`) or `null` if no ordering is needed.
-- limit: An integer specifying the number of results (e.g., `10`) or `null` if no limit.
-- summary_of_understanding: A concise technical summary of your understanding, focusing on how the query maps to schema elements.
-
-Return your response **only in the specified JSON format**. Ensure the JSON is well-formed.
-Example for the new fields:
-  "query_summary_llm": "You want to find all employees in the 'Sales' department who were hired after January 1, 2022, and list their names and hire dates.",
-  "step_by_step_breakdown_llm": [
-    "Select the employee's name and hire date.",
-    "Look at the 'Employees' table.",
-    "Filter for employees in the 'Sales' department.",
-    "Further filter for employees hired after 2022-01-01.",
-    "The results will be presented as requested."
-  ],
-
-Make sure to include these new fields along with the existing ones in your JSON response.
-Return your response in this JSON format:
-"""
+    prompt_file_path = pathlib.Path("prompts") / "query_explanation.txt"
+    try:
+        template_string = prompt_file_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        logger.error(f"Prompt file not found: {prompt_file_path}")
+        raise FileNotFoundError(f"Prompt file not found: {prompt_file_path}. Please ensure it exists.")
+    
     return PromptTemplate(
         input_variables=["relevant_schema", "relevant_statements", "query"],
-        template=template
+        template=template_string
     )
 
 def get_sql_generation_prompt():
     """Get the prompt template for generating a SQL query."""
-    template = """
-You are an expert SQL developer. Your task is to generate a T-SQL query for Microsoft SQL Server based on a natural language query and its structured explanation.
+    prompt_file_path = pathlib.Path("prompts") / "sql_generation.txt"
+    try:
+        template_string = prompt_file_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        logger.error(f"Prompt file not found: {prompt_file_path}")
+        raise FileNotFoundError(f"Prompt file not found: {prompt_file_path}. Please ensure it exists.")
 
-{relevant_schema}
-
-{relevant_statements}
-
-Original Query: {query}
-
-Query Explanation:
-{explanation}
-
-Generate a valid T-SQL query that answers the original query based on the explanation provided.
-Only return the SQL query without any additional explanation or markdown formatting.
-Ensure the query is compatible with Microsoft SQL Server syntax.
-"""
     return PromptTemplate(
         input_variables=["relevant_schema", "relevant_statements", "explanation", "query"],
-        template=template
+        template=template_string
     )
 
 def parse_query_explanation(response_text):
@@ -181,16 +148,16 @@ def create_text2sql_agent(db_path):
     llm = get_llm()
     
     # Create a prompt template
+    prompt_file_path = pathlib.Path("prompts") / "text2sql_agent.txt"
+    try:
+        template_string = prompt_file_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        logger.error(f"Prompt file not found: {prompt_file_path}")
+        raise FileNotFoundError(f"Prompt file not found: {prompt_file_path}. Please ensure it exists.")
+
     prompt = PromptTemplate(
         input_variables=["input", "table_info"],
-        template="""
-You are a SQL expert. Given an input question, create a syntactically correct SQLite query to run.
-
-Only use the following tables:
-{table_info}
-
-Question: {input}
-SQL Query:"""
+        template=template_string
     )
     
     # Create a function to generate SQL
