@@ -135,13 +135,24 @@ def display_feedback_buttons(awaiting_feedback, process_feedback_func):
 
 def display_clarification_form(awaiting_clarification, process_clarification_func):
     """Display clarification form if awaiting clarification."""
-    if not awaiting_clarification: # This should be awaiting_clarification
+    if not awaiting_clarification:
         return
     
+    # Get the previous query from the graph state to pre-fill the text area
+    previous_query = ""
+    # Check if graph_state exists and is a dictionary before accessing keys
+    if st.session_state.get("graph_state") and isinstance(st.session_state.graph_state, dict):
+        previous_query = st.session_state.graph_state.get("current_query", "")
+
     with st.form(key="clarification_form"):
-        st.markdown("##### Please clarify your query:")
-        clarification = st.text_area("", height=80, placeholder="Explain what you're looking for...")
-        submit_button = st.form_submit_button(label="Submit")
+        st.markdown("##### Please clarify or modify your previous query:") # Updated title
+        clarification = st.text_area(
+            "Your query:",  # Changed label from "" to something more descriptive
+            value=previous_query, # Pre-fill with the previous query
+            height=100, # Slightly increased height
+            placeholder="You can edit your previous query here, or provide a new one..." # Updated placeholder
+        )
+        submit_button = st.form_submit_button(label="Submit Clarification") # Updated button label
         if submit_button and clarification:
             process_clarification_func(clarification)
             st.rerun()
