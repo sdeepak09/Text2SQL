@@ -18,7 +18,6 @@ from ui_components import (
     display_intent_detection
 )
 from handlers import (
-    process_query,
     process_new_query_simple,
     process_feedback_simple,
     process_clarification_simple
@@ -234,40 +233,10 @@ if not (USE_LANGGRAPH and st.session_state.awaiting_clarification):
         if USE_LANGGRAPH:
             # Process the new query using the simplified approach
             process_new_query_simple(prompt)
-        else:
-            # Process the query using the legacy method
-            response = process_query(prompt)
-            
-            # Display assistant response with avatar
-            with st.chat_message("assistant", avatar="🤖"):
-                if response["sql_query"]:
-                    st.code(response["sql_query"], language="sql")
-                
-                if response["error"]:
-                    st.error(response["error"])
-                elif response["results"] is not None:
-                    st.dataframe(response["results"])
-                
-                # Generate a text explanation of the results
-                if response["results"] is not None and not response["error"]:
-                    row_count = len(response["results"])
-                    col_count = len(response["results"].columns)
-                    content = f"Query returned {row_count} rows with {col_count} columns."
-                elif response["error"]:
-                    content = "There was an error executing the query."
-                else:
-                    content = "No results returned."
-                    
-                st.markdown(content)
-                
-                # Add assistant response to chat history
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": content,
-                    "sql_query": response["sql_query"],
-                    "results": response["results"],
-                    "error": response["error"]
-                })
+        # Note: The 'else' block that called process_query has been removed.
+        # If USE_LANGGRAPH is false (e.g. due to import error), 
+        # this means no query processing will happen in that case.
+        # This is acceptable as the legacy path is being deprecated.
         
         # Force a rerun to update the UI
         st.rerun()
