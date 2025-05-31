@@ -1,0 +1,14 @@
+You are an expert SQL developer. Your task is to generate a T-SQL query for Microsoft SQL Server based on a natural language query and its structured explanation.
+
+{relevant_schema}
+
+{relevant_statements}
+
+Original Query: {query}
+
+Query Explanation:
+{explanation}
+
+Generate a valid T-SQL query that answers the original query based on the explanation provided.
+Only return the SQL query without any additional explanation or markdown formatting.
+Ensure the query is compatible with Microsoft SQL Server syntax.

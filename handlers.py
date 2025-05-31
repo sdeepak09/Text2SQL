@@ -1,5 +1,5 @@
 import streamlit as st
-import pandas as pd
+# import pandas as pd # Removed as it's no longer used
 import traceback
 import re
 import logging
@@ -8,58 +8,16 @@ from graph_builder import (
     update_state_with_feedback, 
     update_state_with_clarification,
     explain_query_node,
-    generate_sql_node,
-    execute_query_node
+    generate_sql_node
+    # execute_query_node # Removed as it's no longer used by the simplified graph
 )
+
+import os # Added import
+from rag_sql_llm import RAGSQLGenerator # Added import
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-def execute_query(query, db_path):
-    """Execute an SQL query and return the results as a DataFrame."""
-    try:
-        import sqlite3
-        conn = sqlite3.connect(db_path)
-        df = pd.read_sql_query(query, conn)
-        conn.close()
-        return df, None
-    except Exception as e:
-        return None, str(e)
-
-def process_query(query):
-    """Process a query using the legacy method."""
-    try:
-        from langchain_utils import create_text2sql_agent
-        
-        # Create a Text2SQL agent
-        agent_func, _ = create_text2sql_agent(st.session_state.db_path)
-        
-        # Generate SQL from the query
-        response = agent_func(query)
-        
-        # Extract the SQL query from the response
-        sql_query = None
-        if "intermediate_steps" in response and response["intermediate_steps"]:
-            sql_query = response["intermediate_steps"][0]
-        
-        # Execute the query if we have one
-        results = None
-        error = None
-        if sql_query and not sql_query.startswith("-- Error"):
-            results, error = execute_query(sql_query, st.session_state.db_path)
-        
-        return {
-            "sql_query": sql_query,
-            "results": results,
-            "error": error
-        }
-    except Exception as e:
-        return {
-            "sql_query": None,
-            "results": None,
-            "error": str(e)
-        }
 
 # Add a simpler approach that doesn't rely on LangGraph's complex features
 def process_new_query_simple(query):

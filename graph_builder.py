@@ -3,11 +3,12 @@ from langgraph.graph import StateGraph, END
 from pydantic_models import QueryExplanation, SQLOutput, QueryResult
 from llm_utils import (
     get_llm, get_query_explanation_prompt, get_sql_generation_prompt,
-    parse_query_explanation, validate_sql_query, execute_sql_query, get_relevant_schema_context
+    parse_query_explanation, get_relevant_schema_context # Removed validate_sql_query, execute_sql_query
 )
 from db_setup import get_formatted_schema
 import json
 import logging
+import pathlib
 from langchain_openai import OpenAIEmbeddings
 from langchain.vectorstores import FAISS
 from langchain.schema import Document
@@ -37,71 +38,119 @@ embeddings = OpenAIEmbeddings(model="text-embedding-3-small")  # or text-embeddi
 # Define the graph nodes
 def explain_query_node(state: GraphState) -> GraphState:
     """Node that explains the query."""
-    logger.info(f"explain_query_node called with state: {state}")
+    logger.info(f"explain_query_node: Called with current_query: '{state['current_query'][:100]}...'")
     
-    # Get the current query
     query = state["current_query"]
-    
-    # Get the LLM
     llm = get_llm()
     
-    # Get relevant schema context using RAG
+    logger.debug("explain_query_node: Retrieving relevant schema context...")
     context = get_relevant_schema_context(query)
     relevant_schema = context["relevant_schema"]
-    relevant_statements = context.get("relevant_statements", "")
-    
-    # Generate the explanation
-    try:
-        # Get the prompt for query explanation
-        prompt = get_query_explanation_prompt()
+    relevant_statements = context.get("relevant_statements", "") # Ensure it's a string, even if empty
+
+    # Log details of the context
+    logger.debug(f"explain_query_node: Type of relevant_schema: {type(relevant_schema)}, Length: {len(relevant_schema) if isinstance(relevant_schema, (str, list, dict)) else 'N/A'}")
+    logger.debug(f"explain_query_node: Snippet of relevant_schema: {str(relevant_schema)[:200]}...")
+    logger.debug(f"explain_query_node: Type of relevant_statements: {type(relevant_statements)}, Length: {len(relevant_statements) if isinstance(relevant_statements, (str, list, dict)) else 'N/A'}")
+    logger.debug(f"explain_query_node: Snippet of relevant_statements: {str(relevant_statements)[:200]}...")
+    logger.debug(f"explain_query_node: Type of query: {type(query)}, Query: {query}")
+
+    try: # Outer try for the whole explanation generation
+        logger.debug("explain_query_node: Getting query explanation prompt template...")
+        prompt_template = get_query_explanation_prompt()
         
-        # Generate the explanation
-        response = llm.invoke(prompt.format(
-            relevant_schema=relevant_schema,
-            relevant_statements=relevant_statements,
-            query=query
-        ))
+        # ---> ADD NEW LOGGING HERE <---
+        logger.debug("------------- PROMPT TEMPLATE TO BE FORMATTED -------------")
+        logger.debug(f"TEMPLATE STRING: {prompt_template.template}")
+        logger.debug("---------------------------------------------------------")
+        logger.debug("------------- RELEVANT SCHEMA FOR FORMATTING -------------")
+        logger.debug(relevant_schema) # Log full content
+        logger.debug("----------------------------------------------------------")
+        logger.debug("------------- RELEVANT STATEMENTS FOR FORMATTING -------------")
+        logger.debug(relevant_statements) # Log full content
+        logger.debug("--------------------------------------------------------------")
+        logger.debug("------------- QUERY FOR FORMATTING -------------")
+        logger.debug(query) # Log full content
+        logger.debug("------------------------------------------------")
         
-        # Log the response
-        logger.debug(f"LLM response: {response.content}")
-        print(f"LLM response: {response.content}")
+        formatted_prompt_str = "" # Initialize
         
-        # Parse the explanation
+        try:
+            logger.debug("explain_query_node: Attempting to format prompt...")
+            formatted_prompt_str = prompt_template.format(
+                relevant_schema=relevant_schema,
+                relevant_statements=relevant_statements,
+                query=query
+            )
+            logger.debug(f"explain_query_node: Successfully formatted prompt. Length: {len(formatted_prompt_str)}")
+            logger.debug(f"explain_query_node: Formatted prompt (first 500 chars): {formatted_prompt_str[:500]}...")
+        except Exception as format_exception:
+            logger.error(f"explain_query_node: ERROR DURING PROMPT FORMATTING: {format_exception}", exc_info=True)
+            logger.error(f"explain_query_node: String of format_exception: {str(format_exception)}")
+            # This error will be caught by the outer try/except, which logs str(e) and sets fallback
+            raise # Rethrow to be caught by the outer try/except
+
+        logger.debug("explain_query_node: Invoking LLM for query explanation...")
+        response = llm.invoke(formatted_prompt_str)
+        # Log the raw response immediately
+        logger.debug(f"explain_query_node: Raw LLM response content: {response.content}")
+        
+        # The existing print(f"LLM response: {response.content}") can be removed if too verbose for production
+        # print(f"LLM response: {response.content}") # Retaining for now as per instructions
+        
+        logger.debug("explain_query_node: Attempting to parse LLM response.")
         explanation, error = parse_query_explanation(response.content)
         
-        # If there's an error, provide a fallback explanation
         if error:
-            logger.warning(f"Error parsing explanation: {error}")
-            # Create a fallback explanation as a dictionary
+            logger.warning(f"explain_query_node: Error parsing explanation from LLM: {error}")
+            # Fallback logic when 'error' from parse_query_explanation is set
             explanation_dict = {
-                "explanation": f"I'll try to answer your question about: '{query}'",
-                "tables": [],
+                "explanation": f"I'll try to answer your question about: '{query}'", # Using current query
+                "tables": [], # Ensure these are present as per QueryExplanation model, even if empty
                 "columns": []
             }
-            # Update the state with the explanation dictionary
             state["query_explanation"] = explanation_dict
-            
-            # Add the explanation to the conversation history
             state["conversation_history"].append({
                 "role": "assistant",
-                "content": f"I understand your query as follows:\n\n{explanation_dict['explanation']}"
+                "type": "simple_explanation", # Using consistent type
+                "content": f"I understand your query as follows:\n\n{explanation_dict['explanation']}\n(Note: There was an issue parsing the detailed explanation.)"
             })
         else:
-            # Convert the Pydantic model to a dictionary
-            explanation_dict = explanation.dict() if hasattr(explanation, 'dict') else explanation
-            
-            # Update the state with the explanation dictionary
+            logger.info("explain_query_node: Successfully parsed LLM explanation.")
+            explanation_dict = explanation.dict() # Pydantic model to dict
             state["query_explanation"] = explanation_dict
             
-            # Add the explanation to the conversation history
-            explanation_text = explanation.summary_of_understanding if hasattr(explanation, 'summary_of_understanding') else explanation_dict.get('explanation', f"I'll analyze your question about: '{query}'")
-            state["conversation_history"].append({
-                "role": "assistant",
-                "content": f"I understand your query as follows:\n\n{explanation_text}"
-            })
-        
-    except Exception as e:
-        logger.error(f"Error in explain_query_node: {str(e)}")
+            query_summary = explanation_dict.get("query_summary_llm")
+            step_by_step_breakdown = explanation_dict.get("step_by_step_breakdown_llm")
+
+            if query_summary and step_by_step_breakdown:
+                logger.debug("explain_query_node: Using new structured explanation for conversation history.")
+                state["conversation_history"].append({
+                    "role": "assistant",
+                    "type": "query_understanding",
+                    "summary": query_summary,
+                    "breakdown": step_by_step_breakdown,
+                    "structured_explanation_raw": explanation_dict
+                })
+            elif explanation_dict.get("summary_of_understanding"):
+                logger.debug("explain_query_node: Falling back to 'summary_of_understanding' for conversation history.")
+                explanation_text = explanation_dict["summary_of_understanding"]
+                state["conversation_history"].append({
+                    "role": "assistant",
+                    "type": "simple_explanation",
+                    "content": f"I understand your query as follows:\n\n{explanation_text}"
+                })
+            else:
+                logger.warning("explain_query_node: No detailed summary found in parsed explanation. Using generic fallback.")
+                fallback_text = f"I'll try to answer your question about: '{query}'"
+                state["conversation_history"].append({
+                    "role": "assistant",
+                    "type": "simple_explanation",
+                    "content": fallback_text
+                })
+
+    except Exception as e: # Outer catch-all
+        logger.error(f"explain_query_node: Unhandled error during query explanation: {str(e)}", exc_info=True)
         # Provide a fallback explanation in case of any error
         explanation_dict = {
             "explanation": f"Attempting to answer: '{query}'",
@@ -111,9 +160,11 @@ def explain_query_node(state: GraphState) -> GraphState:
         state["query_explanation"] = explanation_dict
         state["conversation_history"].append({
             "role": "assistant",
-            "content": f"I'll try to answer your question about: '{query}'\n\n(Note: I encountered an issue while analyzing your query, but I'll do my best to answer it.)"
+            "type": "simple_explanation", # Consistent type
+            "content": f"I'll try to answer your question about: '{query}'\n\n(Note: I encountered an unexpected issue while analyzing your query, but I'll do my best.)"
         })
     
+    logger.info("explain_query_node: Exiting.")
     return state
 
 def generate_sql_node(state: GraphState) -> GraphState:
@@ -153,34 +204,17 @@ def generate_sql_node(state: GraphState) -> GraphState:
         # Parse the SQL
         sql_query = response.content.strip()
         
-        # Validate the SQL query
-        is_valid, error = validate_sql_query(sql_query, "data/company.db")
-        
-        if is_valid:
-            logger.info(f"Successfully generated SQL: {sql_query}")
-            
-            # Update the state with the SQL
-            state["generated_sql"] = {"sql_query": sql_query}
-            
-            # Format SQL for better readability
-            formatted_sql = sql_query
-            
-            # Add the SQL to the conversation history
-            state["conversation_history"].append({
-                "role": "assistant",
-                "content": f"Here's the SQL query to answer your question:\n\n```sql\n{formatted_sql}\n```"
-            })
-        else:
-            logger.warning(f"Generated invalid SQL: {sql_query}. Error: {error}")
-            
-            # Update the state with the error
-            state["error_message"] = f"Generated invalid SQL: {error}"
-            
-            # Add the error to the conversation history
-            state["conversation_history"].append({
-                "role": "assistant",
-                "content": f"I tried to generate SQL but encountered an error: {error}\n\nHere's what I came up with, but it's not valid:\n\n```sql\n{sql_query}\n```"
-            })
+        # (after sql_query = response.content.strip())
+        logger.info(f"Successfully generated SQL (validation step removed): {sql_query}")
+        state["generated_sql"] = {"sql_query": sql_query}
+        # Format SQL for better readability (this can be kept)
+        formatted_sql = sql_query 
+        state["conversation_history"].append({
+            "role": "assistant",
+            "content": f"Here's the SQL query to answer your question:\n\n```sql\n{formatted_sql}\n```"
+        })
+        # No error handling here for invalid SQL for now, as validation was removed.
+        # The responsibility shifts to the LLM to produce valid SQL based on good context.
     
     except Exception as e:
         logger.error(f"Error in generate_sql_node: {str(e)}")
@@ -195,154 +229,6 @@ def generate_sql_node(state: GraphState) -> GraphState:
         })
     
     return state
-
-def execute_query_node(state: GraphState) -> GraphState:
-    """Node that executes the SQL query."""
-    try:
-        # Get the SQL from the state
-        sql_output_dict = state["generated_sql"]
-        
-        # Convert back to Pydantic model if needed
-        if sql_output_dict and not isinstance(sql_output_dict, SQLOutput):
-            sql_output = SQLOutput(**sql_output_dict)
-        else:
-            sql_output = sql_output_dict
-        
-        # Execute the query
-        try:
-            query_result = execute_sql_query(sql_output.sql_query, "data/company.db")
-            
-            # Update the state with the result
-            logger.info(f"Successfully executed query. Found {len(query_result.data) if query_result.data else 0} results.")
-            return {
-                **state,
-                "query_result": query_result.dict(),  # Store as dict
-                "error_message": None,
-                "conversation_history": state["conversation_history"] + [
-                    {"role": "assistant", "content": format_query_result_message(query_result)}
-                ]
-            }
-        except Exception as e:
-            error_message = str(e)
-            logger.error(f"Error executing query: {error_message}")
-            
-            # Check if the error is due to missing columns or tables
-            if "no such column:" in error_message or "no such table:" in error_message:
-                # Try to regenerate the SQL with corrected schema information
-                return retry_sql_generation(state, error_message)
-            
-            # For other errors, just update the state
-            return {
-                **state,
-                "query_result": None,
-                "error_message": f"Error executing query: {error_message}",
-                "conversation_history": state["conversation_history"] + [
-                    {"role": "assistant", "content": f"I encountered an error while executing the query: {error_message}"}
-                ]
-            }
-    except Exception as e:
-        logger.error(f"Error in execute_query_node: {str(e)}")
-        return {
-            **state,
-            "query_result": None,
-            "error_message": f"Error in execute_query_node: {str(e)}",
-            "conversation_history": state["conversation_history"] + [
-                {"role": "assistant", "content": f"I encountered an error while processing the query: {str(e)}"}
-            ]
-        }
-
-def retry_sql_generation(state: GraphState, error_message: str) -> GraphState:
-    """Retry SQL generation with corrected schema information."""
-    try:
-        # Get the database schema
-        schema = get_formatted_schema()
-        
-        # Get the LLM
-        llm = get_llm(temperature=0)
-        
-        # Create a prompt for SQL correction
-        correction_prompt = f"""
-You need to fix an SQL query that failed with the following error:
-{error_message}
-
-The database schema is:
-{schema}
-
-The original query was:
-{state["generated_sql"]["sql_query"]}
-
-Please generate a corrected SQL query that will work with the given schema.
-Only return the SQL query, nothing else.
-"""
-        
-        # Generate the corrected SQL
-        response = llm.invoke(correction_prompt).content
-        
-        # Extract just the SQL (remove any markdown or explanations)
-        import re
-        sql_match = re.search(r'```sql\n(.*?)\n```', response, re.DOTALL)
-        if sql_match:
-            corrected_sql = sql_match.group(1)
-        else:
-            # Try to find SQL without markdown
-            sql_lines = [line for line in response.split('\n') if line.strip() and not line.startswith('#')]
-            corrected_sql = '\n'.join(sql_lines)
-        
-        # Validate the corrected SQL
-        sql_output = validate_sql_query(corrected_sql, "data/company.db")
-        
-        if not sql_output.query_valid:
-            # If still invalid, update the state with the error
-            logger.error(f"Corrected SQL is still invalid: {sql_output.validation_error}")
-            return {
-                **state,
-                "generated_sql": sql_output.dict(),
-                "error_message": f"Could not correct SQL: {sql_output.validation_error}",
-                "conversation_history": state["conversation_history"] + [
-                    {"role": "assistant", "content": f"I tried to fix the query but encountered another error: {sql_output.validation_error}"}
-                ]
-            }
-        
-        # Try to execute the corrected query
-        try:
-            query_result = execute_sql_query(sql_output.sql_query, "data/company.db")
-            
-            # Update the state with the result
-            logger.info(f"Successfully executed corrected query. Found {len(query_result.data) if query_result.data else 0} results.")
-            return {
-                **state,
-                "generated_sql": sql_output.dict(),
-                "query_result": query_result.dict(),
-                "error_message": None,
-                "conversation_history": state["conversation_history"] + [
-                    {"role": "assistant", "content": f"I had to adjust the query to match the available columns. Here's the corrected SQL:\n\n```sql\n{sql_output.sql_query}\n```"},
-                    {"role": "assistant", "content": format_query_result_message(query_result)}
-                ]
-            }
-        except Exception as e:
-            # If execution still fails, update the state with the error
-            error_message = str(e)
-            logger.error(f"Error executing corrected query: {error_message}")
-            return {
-                **state,
-                "generated_sql": sql_output.dict(),
-                "query_result": None,
-                "error_message": f"Error executing corrected query: {error_message}",
-                "conversation_history": state["conversation_history"] + [
-                    {"role": "assistant", "content": f"I tried to correct the query but still encountered an error: {error_message}"}
-                ]
-            }
-    except Exception as e:
-        # If correction fails, update the state with the error
-        logger.error(f"Error in retry_sql_generation: {str(e)}")
-        return {
-            **state,
-            "query_result": None,
-            "error_message": f"Error in retry_sql_generation: {str(e)}",
-            "conversation_history": state["conversation_history"] + [
-                {"role": "assistant", "content": f"I tried to correct the query but encountered an error: {str(e)}"}
-            ]
-        }
 
 def format_query_result_message(query_result):
     """Format a message to display query results."""
@@ -394,7 +280,7 @@ def build_graph():
     # Add the nodes
     graph.add_node("explain_query", explain_query_node)
     graph.add_node("generate_sql", generate_sql_node)
-    graph.add_node("execute_query", execute_query_node)
+    # graph.add_node("execute_query", execute_query_node) # Removed
     
     # Define placeholder nodes that properly handle the state
     def wait_for_feedback_node(state: GraphState) -> GraphState:
@@ -447,8 +333,9 @@ def build_graph():
     )
     
     # Add the regular edges
-    graph.add_edge("generate_sql", "execute_query")
-    graph.add_edge("execute_query", END)
+    # graph.add_edge("generate_sql", "execute_query") # Removed
+    graph.add_edge("generate_sql", END) # New edge
+    # graph.add_edge("execute_query", END) # Removed
     graph.add_edge("wait_for_clarification", "explain_query")
     
     # Set the entry point
@@ -515,26 +402,17 @@ def detect_sql_intent_node(state: GraphState) -> GraphState:
     llm = get_llm()
     
     # Create a prompt for intent detection
-    intent_prompt = f"""
-You are an intent detection agent for a Text-to-SQL system. Your job is to determine if the user's query is asking for information that can be answered with an SQL query against a database.
-
-The database contains information about a company, including employees, departments, projects, and sales data.
-
-User query: "{query}"
-
-First, analyze if this query is asking for information from a database. Then respond with one of these options:
-1. SQL_INTENT: Yes, this query is asking for database information and can be answered with SQL.
-2. NOT_SQL_INTENT: No, this query is not asking for database information or cannot be answered with SQL.
-
-For each option, provide a brief explanation of your reasoning.
-
-Format your response as:
-INTENT: [SQL_INTENT or NOT_SQL_INTENT]
-EXPLANATION: [Your explanation]
-"""
+    prompt_file_path = pathlib.Path("prompts") / "intent_detection.txt"
+    try:
+        template_string = prompt_file_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        logger.error(f"Prompt file not found: {prompt_file_path}")
+        raise FileNotFoundError(f"Prompt file not found: {prompt_file_path}. Please ensure it exists.")
+    
+    intent_prompt_formatted = template_string.format(query=query) 
     
     # Generate the intent detection
-    response = llm.invoke(intent_prompt).content
+    response = llm.invoke(intent_prompt_formatted).content
     
     # Parse the response
     intent = "NOT_SQL_INTENT"  # Default to not SQL intent

@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import re
 
 def display_schema_sidebar(table_info):
     """Display example questions in the sidebar."""
@@ -15,40 +16,68 @@ def display_schema_sidebar(table_info):
         st.divider()
         st.subheader("Example Questions")
         st.markdown("""
-        - How many providers are in each specialty?
-        - What is the average rating for each provider specialty?
-        - Which specialty has the highest number of providers?
-        - List all providers with a rating above 4.5
-        - Show total appointments by provider in the last month
-        - Which patient has the most appointments?
-        - How many appointments were scheduled for each day last week?
-        - What's the average appointment duration by specialty?
+        - Show all admission records where the total allowed amount is greater than 500.
+        - List the first name and last name of patients for admissions with an ID less than 10.
+        - What are the procedure codes (PROC_CD, ICD_PROC_CD) for admission ID 75?
+        - Show responsible provider IDs and a count of admissions for each.
+        - List admission IDs and their admit dates for admissions after January 1, 2023.
+        - Which patient (MEMBER ID) has the most entries in the clinical markers table (CLINMARK_T)?
+        - What are the distinct categories (CAT_DESC) available in the case data (CASD)?
         """)
 
 def display_chat_messages(messages):
     """Display chat messages with avatars and styling."""
     for message in messages:
-        # Set avatars based on role
         avatar = "👤" if message["role"] == "user" else "🤖"
-        
-        # Display the message with the appropriate avatar
         with st.chat_message(message["role"], avatar=avatar):
-            st.markdown(message["content"])
+            if message["role"] == "assistant" and message.get("type") == "query_understanding":
+                summary_text = message.get("summary", "")
+                # New simplified logic for breakdown processing:
+                breakdown_data = message.get("breakdown") # This is now expected to be List[str]
+
+                html_breakdown_lines = []
+                if isinstance(breakdown_data, list):
+                    for i, step_text in enumerate(breakdown_data):
+                        step_stripped = str(step_text).strip() # Ensure it's a string and stripped
+                        if step_stripped:
+                            # Prepend number to the step text itself, then wrap in <p>
+                            html_breakdown_lines.append(f"<p style='margin: 0.2em 0;'>{i+1}. {step_stripped}</p>")
+                elif isinstance(breakdown_data, str) and breakdown_data.strip(): # Fallback if it's still a string
+                    # Fallback for string, remove logger.warning as logger is not available here
+                    html_breakdown_lines.append(f"<p style='margin: 0.2em 0;'>{breakdown_data.strip()}</p>")
+                # If breakdown_data is None or empty list, html_breakdown_lines will be empty.
+                
+                html_breakdown = "".join(html_breakdown_lines)
+                # The 'if not html_breakdown.strip() and breakdown_text_raw.strip():' fallback is removed as per new logic.
+                # The new logic handles empty list or None gracefully (empty html_breakdown).
+
+                understanding_html_content = f"""
+                <div style="background-color: #f0f2f6; padding: 15px; border-radius: 10px; border: 1px solid #dfe1e5; margin-bottom: 10px;">
+                    <h4 style="margin-top: 0; margin-bottom: 10px;">I understand your query as follows:</h4>
+                    <p>{summary_text}</p>
+                    <hr style="border-top: 1px solid #dfe1e5; margin-top: 10px; margin-bottom: 10px;">
+                    <h4 style="margin-top: 0; margin-bottom: 10px;">Here's my plan to answer it:</h4>
+                    {html_breakdown}
+                </div>
+                """
+                st.markdown(understanding_html_content, unsafe_allow_html=True)
+
+            elif message["role"] == "assistant" and message.get("type") == "simple_explanation":
+                st.markdown(message["content"])
+            elif message["role"] == "user":
+                st.markdown(message["content"])
+            else:
+                if "content" in message: 
+                    st.markdown(message["content"])
 
 def display_query_results(graph_state):
     """Display query results from the graph state."""
     if not graph_state:
         return
     
-    # Display the query explanation if available
     if "query_explanation" in graph_state and graph_state["query_explanation"]:
-        # Query explanation is already displayed in the chat history
         pass
     
-    # We'll remove this section since the SQL is already in the conversation history
-    # The SQL will only be displayed as part of the conversation
-    
-    # Display error message if there was an error
     if "error_message" in graph_state and graph_state["error_message"]:
         st.error(graph_state["error_message"])
 
@@ -57,12 +86,11 @@ def display_debug_info(show_debug, graph_state, debug_info):
     if not show_debug:
         return
     
-    # Create a dedicated debug section with an expander to keep the UI clean
     with st.expander("Debug Information", expanded=False):
         st.write("### Basic Debug Info")
-        st.write("- LangGraph enabled: Yes")
-        st.write(f"- Awaiting feedback: {st.session_state.awaiting_feedback}")
-        st.write(f"- Awaiting clarification: {st.session_state.awaiting_clarification}")
+        st.write("- LangGraph enabled: Yes") # Assuming True if this UI is active
+        st.write(f"- Awaiting feedback: {st.session_state.get('awaiting_feedback', False)}")
+        st.write(f"- Awaiting clarification: {st.session_state.get('awaiting_clarification', False)}")
         st.write(f"- Graph state available: {graph_state is not None}")
         
         if graph_state:
@@ -72,13 +100,11 @@ def display_debug_info(show_debug, graph_state, debug_info):
             st.write(f"- Has query result: {'query_result' in graph_state and graph_state['query_result'] is not None}")
             st.write(f"- User feedback: {graph_state.get('user_feedback', 'None')}")
             
-            # Show a safe version of the graph state (without the large objects)
             st.write("### Full Graph State")
-            safe_state = {k: (str(v) if k in ["query_explanation", "generated_sql", "query_result"] else v) 
+            safe_state = {k: (str(v)[:500] + '...' if isinstance(v, str) and len(str(v)) > 500 else v) 
                          for k, v in graph_state.items()}
             st.json(safe_state)
         
-        # Show debug info
         if debug_info:
             st.write("### Debug Info")
             st.json(debug_info)
@@ -88,21 +114,22 @@ def display_feedback_buttons(awaiting_feedback, process_feedback_func):
     if not awaiting_feedback:
         return
     
-    # Create a more prominent feedback section with a light background
-    st.markdown("""
-    <div style="padding: 15px; background-color: #f0f2f6; border-radius: 10px; margin-bottom: 20px;">
-        <h4 style="margin-top: 0;">Is this understanding correct?</h4>
-    </div>
-    """, unsafe_allow_html=True)
+    # User preference: Comment out the header above the buttons
+    # st.markdown("""
+    # <div style="padding: 10px 0px; margin-bottom: 10px; text-align: left;">
+    #     <h4 style="margin-top: 0; margin-bottom: 5px;">Is this understanding correct and ready to proceed?</h4>
+    # </div>
+    # """, unsafe_allow_html=True)
     
-    # Use clear, descriptive buttons
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("✓ Yes, that's right", key="good_feedback", use_container_width=True):
+    col_spacer, col_btn1, col_btn2 = st.columns([2, 1, 1])
+
+    with col_btn1:
+        if st.button("Yes, I approve the understanding", key="approve_understanding_feedback", use_container_width=True):
             process_feedback_func("good")
             st.rerun()
-    with col2:
-        if st.button("✗ No, that's not right", key="bad_feedback", use_container_width=True):
+            
+    with col_btn2:
+        if st.button("No, I want to modify the query", key="modify_query_feedback", use_container_width=True):
             process_feedback_func("not_good")
             st.rerun()
 
@@ -111,11 +138,21 @@ def display_clarification_form(awaiting_clarification, process_clarification_fun
     if not awaiting_clarification:
         return
     
-    # More compact clarification form
+    # Get the previous query from the graph state to pre-fill the text area
+    previous_query = ""
+    # Check if graph_state exists and is a dictionary before accessing keys
+    if st.session_state.get("graph_state") and isinstance(st.session_state.graph_state, dict):
+        previous_query = st.session_state.graph_state.get("current_query", "")
+
     with st.form(key="clarification_form"):
-        st.markdown("##### Please clarify your query:")
-        clarification = st.text_area("", height=80, placeholder="Explain what you're looking for...")
-        submit_button = st.form_submit_button(label="Submit")
+        st.markdown("##### Please clarify or modify your previous query:") # Updated title
+        clarification = st.text_area(
+            "Your query:",  # Changed label from "" to something more descriptive
+            value=previous_query, # Pre-fill with the previous query
+            height=100, # Slightly increased height
+            placeholder="You can edit your previous query here, or provide a new one..." # Updated placeholder
+        )
+        submit_button = st.form_submit_button(label="Submit Clarification") # Updated button label
         if submit_button and clarification:
             process_clarification_func(clarification)
             st.rerun()
@@ -131,4 +168,4 @@ def display_intent_detection(graph_state):
         else:
             st.warning("⚠️ Your query may not be suitable for SQL. Please rephrase your question.")
         if "intent_explanation" in graph_state and graph_state["intent_explanation"]:
-            st.info(graph_state["intent_explanation"]) 
+            st.info(graph_state["intent_explanation"])

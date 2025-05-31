@@ -18,7 +18,6 @@ from ui_components import (
     display_intent_detection
 )
 from handlers import (
-    process_query,
     process_new_query_simple,
     process_feedback_simple,
     process_clarification_simple
@@ -102,6 +101,29 @@ if USE_LANGGRAPH:
         if st.session_state.get("show_debug", False):
             st.success(f"OPENAI_API_KEY is set (starts with {openai_api_key[:4]}...)")
 
+# --- FAISS Index Check ---
+# This path should be consistent with where main_pipeline.py and query_embedding_store.py save the index.
+FAISS_INDEX_FOLDER_PATH = "data/context_faiss_store_v1"
+faiss_actual_index_file = os.path.join(FAISS_INDEX_FOLDER_PATH, "index.faiss")
+
+if not os.path.exists(faiss_actual_index_file):
+    st.error(
+        f"""🛑 **FAISS Vector Index Not Found!** 🛑
+
+The Text2SQL RAG pipeline requires a FAISS vector index at `{FAISS_INDEX_FOLDER_PATH}`
+to function correctly. This index stores embeddings of your schema and example queries.
+
+**To build the index, please run the following command in your terminal from the project root directory:**
+```
+python main_pipeline.py
+```
+
+After running the command, please refresh this page.
+The application's SQL generation capabilities will be limited or non-functional until the index is built.
+"""
+    )
+# --- End FAISS Index Check ---
+
 # Initialize debug mode
 if "show_debug" not in st.session_state:
     st.session_state.show_debug = False
@@ -154,12 +176,13 @@ st.markdown("""
 
 <h2>Example questions to try:</h2>
 <ul>
-<li>How many providers are in each specialty?</li>
-<li>What is the average rating for each provider specialty?</li>
-<li>Which specialty has the highest number of providers?</li>
-<li>List all providers with a rating above 4.5</li>
-<li>Show total appointments by provider in the last month</li>
-<li>Which patient has the most appointments?</li>
+<li>Show all admission records where the total allowed amount is greater than 500.</li>
+<li>List the first name and last name of patients for admissions with an ID less than 10.</li>
+<li>What are the procedure codes (PROC_CD, ICD_PROC_CD) for admission ID 75?</li>
+<li>Show responsible provider IDs and a count of admissions for each.</li>
+<li>List admission IDs and their admit dates for admissions after January 1, 2023.</li>
+<li>Which patient (MEMBER ID) has the most entries in the clinical markers table (CLINMARK_T)?</li>
+<li>What are the distinct categories (CAT_DESC) available in the case data (CASD)?</li>
 </ul>
 </div>
 </details>
@@ -210,40 +233,10 @@ if not (USE_LANGGRAPH and st.session_state.awaiting_clarification):
         if USE_LANGGRAPH:
             # Process the new query using the simplified approach
             process_new_query_simple(prompt)
-        else:
-            # Process the query using the legacy method
-            response = process_query(prompt)
-            
-            # Display assistant response with avatar
-            with st.chat_message("assistant", avatar="🤖"):
-                if response["sql_query"]:
-                    st.code(response["sql_query"], language="sql")
-                
-                if response["error"]:
-                    st.error(response["error"])
-                elif response["results"] is not None:
-                    st.dataframe(response["results"])
-                
-                # Generate a text explanation of the results
-                if response["results"] is not None and not response["error"]:
-                    row_count = len(response["results"])
-                    col_count = len(response["results"].columns)
-                    content = f"Query returned {row_count} rows with {col_count} columns."
-                elif response["error"]:
-                    content = "There was an error executing the query."
-                else:
-                    content = "No results returned."
-                    
-                st.markdown(content)
-                
-                # Add assistant response to chat history
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": content,
-                    "sql_query": response["sql_query"],
-                    "results": response["results"],
-                    "error": response["error"]
-                })
+        # Note: The 'else' block that called process_query has been removed.
+        # If USE_LANGGRAPH is false (e.g. due to import error), 
+        # this means no query processing will happen in that case.
+        # This is acceptable as the legacy path is being deprecated.
         
         # Force a rerun to update the UI
         st.rerun()

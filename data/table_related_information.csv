@@ -1,0 +1,5 @@
+Source_database,table_name,Table_category,Description
+HealthcareDB,Patients,Core Patient Data,Stores essential demographic and identifying information for each patient or member in the system.
+HealthcareDB,ADMISSIONS,Core Clinical/Episode Data,"Captures comprehensive records of patient hospital admissions, including financial and clinical details."
+HealthcareDB,CLINMARK_T,Clinical Indicators,"Tracks specific clinical indicators or markers for members, recording unique occurrences over time."
+HealthcareDB,CASD,Classification/Case Data,"Holds information related to cases or classifications, including descriptions and category details."
