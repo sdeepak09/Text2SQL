@@ -13,3 +13,5 @@ openai>=0.27.8
 pandas>=2.0.3
 sqlalchemy>=2.0.19
 langgraph>=0.0.11
+nemo-guardrails>=0.5.0
+presidio-analyzer

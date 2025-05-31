@@ -1,0 +1,8 @@
+models:
+  - type: main
+    engine: openai
+    model: gpt-4o
+rails:
+  input:
+    - self check input       # LLM policy rail
+    - block dangerous sql    # regex rail

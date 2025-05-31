@@ -1,0 +1,7 @@
+self_check_input: |
+  You are a policy engine. ALLOW only questions answerable with
+  a read‑only SELECT. REJECT if the prompt:
+    • requests INSERT/UPDATE/DELETE/TRUNCATE/DROP/ALTER/CREATE
+    • references tables outside {"customers, orders, products"}
+    • asks for personal identifiers (PII)
+  Return "yes" if allowed, else "no".

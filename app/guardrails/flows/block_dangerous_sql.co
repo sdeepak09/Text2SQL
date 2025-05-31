@@ -1,0 +1,5 @@
+define flow block dangerous sql
+  $bad = user.raw matches "(?i)\b(drop|delete|truncate|update|insert|alter)\b"
+  if $bad
+    bot refuse to respond
+    stop
